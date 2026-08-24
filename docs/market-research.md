@@ -12,7 +12,7 @@ Pesquisa realizada em 24 de agosto de 2026, usando documentação e páginas ofi
 
 ## Direção adotada
 
-O MVP da Everlenz Obras não tenta reproduzir um ERP completo. O fluxo central é:
+O MVP do Em Dia não tenta reproduzir um ERP completo. O fluxo central é:
 
 `Atividade do Gantt → registro diário → evidência fotográfica → avanço auditável → status report`
 

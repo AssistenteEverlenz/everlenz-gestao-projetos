@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Everlenz Obras",
+  title: "Em Dia — by Everlenz",
   description: "Gestão técnica de obras, cronogramas e status reports.",
 };
 

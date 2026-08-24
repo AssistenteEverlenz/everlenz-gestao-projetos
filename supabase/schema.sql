@@ -1,4 +1,4 @@
--- Everlenz Obras · estrutura inicial multiusuário
+-- Em Dia · by Everlenz · estrutura inicial multiusuário
 create extension if not exists pgcrypto;
 
 create type public.project_role as enum ('admin', 'manager', 'engineer', 'foreman', 'client');

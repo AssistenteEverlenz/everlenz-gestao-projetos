@@ -26,12 +26,12 @@ export function Reports({ project, tasks, entries, metrics, setToast }: Props) {
     {preview && <Modal title="Prévia do status report" subtitle="SR-0104 · 24 de agosto de 2026" onClose={() => setPreview(false)} wide>
       <div className="report-preview">
         <div className="report-paper">
-          <header><div className="report-logo"><img src="/everlenz-obras.svg" alt=""/><strong>everlenz <span>OBRAS</span></strong></div><small>STATUS REPORT · SR-0104</small></header>
+          <header><div className="report-logo"><img src="/emdia.svg" alt=""/><strong>em dia <span>BY EVERLENZ</span></strong></div><small>STATUS REPORT · SR-0104</small></header>
           <div className="report-cover"><span>ACOMPANHAMENTO DIÁRIO</span><h2>{project.name}</h2><p>{project.client} · {project.location}</p><strong>24 de agosto de 2026</strong></div>
           <div className="report-kpis"><div><span>AVANÇO GERAL</span><strong>{metrics.overall}%</strong></div><div><span>PLANEJADO</span><strong>41%</strong></div><div><span>DESVIO</span><strong className="danger">−3 p.p.</strong></div><div><span>STATUS</span><strong>No prazo</strong></div></div>
           <section><h3>Resumo executivo</h3><p>As frentes de estrutura e vedação avançaram conforme a programação do dia. A armação positiva da laje atingiu {tasks.find((task) => task.id === 7)?.progress}% e a alvenaria do setor norte recebeu quatro novas fiadas. O desvio acumulado permanece controlado e não altera, neste momento, a previsão contratual.</p></section>
           <section><h3>Evolução registrada hoje</h3><div className="preview-photos">{entries.slice(0, 2).map((entry) => <article key={entry.id}>{entry.image && <img src={entry.image} alt=""/>}<div><strong>{entry.title}</strong><p>{entry.description}</p><span>+{entry.progressAdded}% no cronograma</span></div></article>)}</div></section>
-          <footer>Gerado por Everlenz Obras · Informação técnica com evidência de campo</footer>
+          <footer>Gerado por Em Dia · by Everlenz · Informação técnica com evidência de campo</footer>
         </div>
         <div className="preview-actions"><button className="secondary-btn" onClick={() => window.print()}><Icon name="download"/> Exportar PDF</button><button className="primary-btn" onClick={() => { setPreview(false); setToast("Relatório marcado como enviado ao cliente."); }}><Icon name="share"/> Aprovar e compartilhar</button></div>
       </div>

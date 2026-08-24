@@ -1,8 +1,8 @@
-# Everlenz Obras
+# Em Dia — by Everlenz
 
 Plataforma técnica para planejamento, acompanhamento fotográfico e comunicação de obras. O protótipo conecta o avanço do Gantt aos registros do diário e transforma esses dados em status reports claros para o cliente.
 
-Domínio sugerido: `obras.everlenz.com.br`.
+Domínio da versão de teste: `emdia.everlenz.com.br`.
 
 ## O que já funciona
 
@@ -38,7 +38,7 @@ npm run build
 1. Crie uma aplicação usando o repositório GitHub.
 2. Selecione o build por `Dockerfile` e a raiz `/`.
 3. Exponha a porta `3000`.
-4. Configure o domínio `https://obras.everlenz.com.br`.
+4. Configure o domínio `https://emdia.everlenz.com.br`.
 5. Cadastre as variáveis do `.env.example` como secrets.
 6. Faça o deploy.
 
@@ -47,4 +47,5 @@ O `Dockerfile` usa a saída standalone do Next.js e executa como usuário sem pr
 ## Documentação
 
 - [Pesquisa de mercado](docs/market-research.md)
+- [Publicação no Coolify](docs/coolify.md)
 - [Modelo inicial do Supabase](supabase/schema.sql)

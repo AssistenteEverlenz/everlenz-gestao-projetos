@@ -42,7 +42,7 @@ export function Workspace() {
   const meta = titles[view];
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("everlenz-obras-theme");
+    const saved = window.localStorage.getItem("emdia-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const frame = window.requestAnimationFrame(() => setDark(saved ? saved === "dark" : prefersDark));
     return () => window.cancelAnimationFrame(frame);
@@ -50,7 +50,7 @@ export function Workspace() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    window.localStorage.setItem("everlenz-obras-theme", dark ? "dark" : "light");
+    window.localStorage.setItem("emdia-theme", dark ? "dark" : "light");
   }, [dark]);
 
   useEffect(() => {
@@ -87,8 +87,8 @@ export function Workspace() {
     <div className="app-shell">
       <aside className="sidebar glass">
         <button className="brand" onClick={() => navigate("overview")} aria-label="Ir para visão geral">
-          <img src="/everlenz-obras.svg" alt="" />
-          <span><strong>everlenz</strong><small>OBRAS</small></span>
+          <img src="/emdia.svg" alt="" />
+          <span><strong>em dia</strong><small>BY EVERLENZ</small></span>
         </button>
 
         <div className="sidebar-project-label">PROJETO ATUAL</div>
@@ -113,7 +113,7 @@ export function Workspace() {
 
       <main className="main-area">
         <header className="topbar">
-          <div className="mobile-brand"><img src="/everlenz-obras.svg" alt="" /><strong>everlenz <span>OBRAS</span></strong></div>
+          <div className="mobile-brand"><img src="/emdia.svg" alt="" /><strong>em dia <span>BY EVERLENZ</span></strong></div>
           <div className="header-copy"><small>{meta.eyebrow}</small><h1>{meta.title}</h1><p>{meta.description}</p></div>
           <div className="header-actions">
             <div className="sync-state"><span /> Sincronizado agora</div>
