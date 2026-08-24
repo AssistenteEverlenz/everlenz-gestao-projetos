@@ -2,6 +2,20 @@
 
 Este projeto está preparado para publicação pelo `Dockerfile`, usando a porta interna `3000` e o domínio `https://emdia.everlenz.com.br`.
 
+## Resource configurado
+
+- Instalação: `https://coolify.everlenz.com.br`
+- Projeto: `Projetos Everlenz`
+- Ambiente: `production`
+- Aplicação: `emdia-everlenz`
+- Repositório/branch: `AssistenteEverlenz/everlenz-gestao-projetos:main`
+- Build: `Dockerfile`
+- Porta interna: `3000`
+- Health check: `GET /` com retorno `200`
+- HTTPS e deploy automático: habilitados
+
+O webhook manual do GitHub está ligado apenas ao evento `push` da branch configurada. O restante deste documento serve como referência para recriar ou auditar o resource.
+
 ## Criação pelo painel
 
 1. Abra o projeto e o ambiente desejado no Coolify.
