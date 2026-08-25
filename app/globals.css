@@ -140,7 +140,8 @@ html[data-theme="dark"] .glass { border-color: var(--line); }
 .sidebar-compact .sidebar { width: 74px; }
 .sidebar-compact .main-area { padding-left: 102px; }
 .sidebar-compact .brand { padding-inline: 4px; justify-content: center; }
-.sidebar-compact .brand span,.sidebar-compact .sidebar-project-label,.sidebar-compact .project-copy,.sidebar-compact .sidebar-project > svg,.sidebar-compact .side-nav button > span,.sidebar-compact .side-nav em,.sidebar-compact .side-footer > button > span,.sidebar-compact .user-card > span:nth-child(2),.sidebar-compact .user-card > svg { display: none; }
+.sidebar-compact .brand span,.sidebar-compact .project-copy,.sidebar-compact .sidebar-project > svg,.sidebar-compact .side-nav button > span,.sidebar-compact .side-nav em,.sidebar-compact .side-footer > button > span,.sidebar-compact .user-card > span:nth-child(2),.sidebar-compact .user-card > svg { display: none; }
+.sidebar-compact .sidebar-project-label { visibility:hidden; }
 .sidebar-compact .sidebar-project { display: flex; justify-content: center; padding: 8px; }
 .sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { justify-content: center; padding-inline: 10px; }
 .sidebar-compact .user-card { display: flex; justify-content: center; padding-inline: 0; }
@@ -316,6 +317,74 @@ html[data-theme="dark"] { color-scheme:dark; }
 .report-gantt-page > footer span:nth-child(2) i { background:#26483d; }
 .report-gantt-page > footer > b { margin-left:auto; font-size:6px; }
 
+/* Hierarquia, leitura e semântica operacional do cronograma */
+.task-name-cell { position:relative; }
+.tree-toggle { display:inline-grid; place-items:center; width:18px; height:18px; margin-right:5px; border:1px solid var(--line-strong); border-radius:6px; background:var(--surface-solid); color:var(--accent-dark); font:900 14px/1 var(--font-display); vertical-align:middle; cursor:pointer; }
+.gantt-row.is-parent .task-row { background:color-mix(in srgb,var(--surface-solid) 94%,var(--bg-2)); }
+.gantt-row.is-parent .task-row strong { font-weight:800; }
+.gantt-mobile-card.is-parent .tree-toggle { width:20px; height:20px; margin-left:-1px; }
+.gantt-mobile-card.is-child { border-left-color:var(--line-strong); }
+.gantt-bar { opacity:1; }
+.gantt-bar i { opacity:1; }
+.critical .gantt-bar i { background:inherit; }
+
+/* Cada serviço forma um bloco indivisível com suas próprias evidências. */
+.report-activity-blocks { display:grid; gap:14px; }
+.report-activity-block { overflow:hidden; border:1px solid #dfe4e2; border-radius:10px; }
+.report-activity-block > header { display:grid; grid-template-columns:28px 1fr auto; gap:10px; align-items:start; padding:11px 12px; background:#f1f4f2; border-bottom:1px solid #dfe4e2; }
+.report-activity-block > header > span { display:grid; place-items:center; width:27px; height:27px; border-radius:7px; background:#fff; color:#65736e; font:800 7px var(--font-display); }
+.report-activity-block > header > div { display:grid; }
+.report-activity-block > header strong { font-size:9px; }
+.report-activity-block > header small { margin-top:2px; color:#74807b; font-size:7px; }
+.report-activity-block > header p { margin:5px 0 0; color:#59645f; font-size:7px; line-height:1.5; }
+.report-activity-block > header > b { white-space:nowrap; color:#59645f; font-size:7px; }
+.report-activity-block > header em { color:#c96734; font-style:normal; }
+.activity-photos { padding:11px; }
+
+@media screen {
+  body { font-size:15px; }
+  .overline,.header-copy small { font-size:10px; }
+  .header-copy p { font-size:13px; }
+  .primary-btn,.secondary-btn,.text-btn,.toggle-chip,.switch-label,.segmented button { font-size:12px; }
+  .gantt-quick-filters > button { font-size:11px; }
+  .gantt-quick-filters > button b { font-size:10px; min-width:20px; height:20px; }
+  .gantt-summary span { font-size:10px; }
+  .gantt-summary strong { font-size:14px; }
+  .task-table-head,.timeline-head { font-size:10px; }
+  .gantt-row { min-height:56px; }
+  .task-row > span:first-child,.task-row > span:nth-child(3) { font-size:11px; }
+  .task-row strong { font-size:12px; }
+  .task-row small { font-size:10px; }
+  .task-row b { font-size:12px; }
+  .gantt-bar { height:20px; }
+  .gantt-bar b { font-size:10px; line-height:20px; }
+  .gantt-legend { font-size:10px; }
+  .task-journal-count,.mobile-journal-count { font-size:9px; }
+  .modal h2 { font-size:22px; }
+  .modal header p { font-size:13px; }
+  .modal label > span,.settings-card label > span { font-size:11px; }
+  input,textarea,select { font-size:13px; }
+  .modal-note p,.permission-note p { font-size:12px; }
+  .task-detail-grid small { font-size:10px; }
+  .task-detail-grid strong { font-size:12px; }
+  .entry-history-item header span { font-size:10px; }
+  .entry-history-item h3 { font-size:18px; }
+  .entry-history-item header small,.entry-history-item > p { font-size:12px; }
+  .history-progress small { font-size:9px; }
+  .history-progress b { font-size:14px; }
+  .history-photos span { font-size:10px; }
+  .edit-context strong { font-size:12px; }
+  .edit-context small,.entry-edit-grid small { font-size:10px; }
+  .panel-header h3,.panel > h3 { font-size:17px; }
+  .journal-content h3 { font-size:16px; }
+  .journal-content p { font-size:12px; }
+  .journal-content footer,.journal-content footer small { font-size:10px; }
+  .daily-stats span,.check-list span { font-size:10px; }
+  .report-builder p,.builder-chips span { font-size:10px; }
+  .report-row strong { font-size:12px; }
+  .report-row small { font-size:10px; }
+}
+
 @media (max-width:767px) {
   .access-shell { min-height:100svh; place-items:center; padding:18px; }
   .access-card { width:min(430px,100%); max-height:calc(100svh - 36px); overflow:auto; padding:24px 18px; border-radius:24px; }
@@ -336,9 +405,10 @@ html[data-theme="dark"] { color-scheme:dark; }
   .gantt-mobile-card.is-parent { background:color-mix(in srgb,var(--surface-solid) 96%,var(--green)); border-color:var(--line-strong); }
   .gantt-mobile-card.is-child::before { content:""; position:absolute; left:-8px; top:-8px; width:7px; height:28px; border-left:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); border-radius:0 0 0 6px; }
   .gantt-mobile-card > div { min-width:0; gap:4px; }
-  .gantt-mobile-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
-  .gantt-mobile-card > div > span { min-width:0; font-size:7.5px; }
-  .gantt-mobile-card > b { font-size:13px; }
+  .gantt-mobile-card small { font-size:10px; }
+  .gantt-mobile-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; }
+  .gantt-mobile-card > div > span { min-width:0; font-size:11px; }
+  .gantt-mobile-card > b { font-size:16px; }
   .gantt-mobile-card .thin-progress { margin-top:3px; }
   .mobile-journal-count { margin-left:auto; padding:3px 5px; border-radius:7px; background:color-mix(in srgb,var(--green) 10%,transparent); }
 
@@ -350,6 +420,9 @@ html[data-theme="dark"] { color-scheme:dark; }
   .preview-photos img { height:260px; }
   .preview-actions { flex-wrap:wrap; }
   .preview-actions > button { flex:1 1 145px; }
+  .bottom-nav button { font-size:10px; }
+  .report-activity-block > header { grid-template-columns:28px 1fr; }
+  .report-activity-block > header > b { grid-column:2; }
 }
 
 @page { size:A4 portrait; margin:12mm; }
@@ -365,6 +438,8 @@ html[data-theme="dark"] { color-scheme:dark; }
   .report-paper { position:static!important; width:auto!important; max-width:none!important; margin:0!important; padding:0!important; box-shadow:none!important; }
   .report-paper > header,.report-cover,.report-kpis,.report-paper > section:not(.report-gantt-page),.report-paper > footer { break-inside:avoid; page-break-inside:avoid; }
   .report-update-list article,.preview-photos article { break-inside:avoid; page-break-inside:avoid; }
+  .report-activity-block { overflow:visible; break-inside:auto; page-break-inside:auto; }
+  .report-activity-block > header { break-after:avoid; page-break-after:avoid; }
   .preview-photos { grid-template-columns:1fr 1fr!important; gap:8mm; }
   .preview-photos img { height:78mm!important; object-fit:contain!important; }
   .report-gantt-page,.report-gantt-page * { visibility:visible!important; }
