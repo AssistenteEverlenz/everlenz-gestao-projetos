@@ -68,6 +68,39 @@ const formatDate = (value: string) =>
     })
     .replace(" de ", " ");
 
+type RoutePoint = { x: number; y: number };
+
+function roundedOrthogonalPath(points: RoutePoint[], radius = 5) {
+  const route = points.filter(
+    (point, index) =>
+      index === 0 ||
+      point.x !== points[index - 1].x ||
+      point.y !== points[index - 1].y,
+  );
+  if (route.length < 2) return "";
+
+  let path = `M ${route[0].x} ${route[0].y}`;
+  for (let index = 1; index < route.length - 1; index += 1) {
+    const previous = route[index - 1];
+    const corner = route[index];
+    const next = route[index + 1];
+    const incoming = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const outgoing = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const curve = Math.min(radius, incoming / 2, outgoing / 2);
+    const before = {
+      x: corner.x + ((previous.x - corner.x) / incoming) * curve,
+      y: corner.y + ((previous.y - corner.y) / incoming) * curve,
+    };
+    const after = {
+      x: corner.x + ((next.x - corner.x) / outgoing) * curve,
+      y: corner.y + ((next.y - corner.y) / outgoing) * curve,
+    };
+    path += ` L ${before.x} ${before.y} Q ${corner.x} ${corner.y} ${after.x} ${after.y}`;
+  }
+  const last = route[route.length - 1];
+  return `${path} L ${last.x} ${last.y}`;
+}
+
 export function Schedule({
   project,
   tasks,
@@ -627,10 +660,19 @@ export function Schedule({
                 // Use the free strip above/below the destination bar so long
                 // dependency routes do not cross task periods.
                 const approachY = targetY - rowDirection * 16;
+                const dependencyPath = roundedOrthogonalPath([
+                  { x: sourceX, y: sourceY },
+                  { x: sourceExitX, y: sourceY },
+                  { x: sourceExitX, y: approachY },
+                  { x: targetEntryX, y: approachY },
+                  { x: targetEntryX, y: targetY },
+                  { x: targetX, y: targetY },
+                ]);
                 return (
-                  <polyline
+                  <path
+                    className="dependency-path"
                     key={`${predecessor.id}-${task.id}`}
-                    points={`${sourceX},${sourceY} ${sourceExitX},${sourceY} ${sourceExitX},${approachY} ${targetEntryX},${approachY} ${targetEntryX},${targetY} ${targetX},${targetY}`}
+                    d={dependencyPath}
                     markerEnd="url(#dependency-arrow)"
                   />
                 );
