@@ -449,6 +449,25 @@ export async function updateRemoteTaskProgress(
   if (error) throw error;
 }
 
+export async function deleteRemoteTask(projectId: string, taskId: string) {
+  const supabase = getSupabaseBrowserClient();
+  const { count: updateCount, error: countError } = await supabase
+    .from("task_updates")
+    .select("id", { count: "exact", head: true })
+    .eq("task_id", taskId);
+  if (countError) throw countError;
+  if (updateCount)
+    throw new Error(
+      "A atividade possui registros no Diário de Obra e não pode ser excluída.",
+    );
+  const { error } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("id", taskId)
+    .eq("project_id", projectId);
+  if (error) throw error;
+}
+
 async function photoToFile(photo: JournalPhoto, index: number) {
   const response = await fetch(photo.url);
   const blob = await response.blob();
@@ -529,6 +548,18 @@ export async function updateRemoteEntry(
         .remove(uploaded.map((item) => item.storage_path));
     throw error;
   }
+  const deletedPaths =
+    (data as { deleted_paths?: string[] } | null)?.deleted_paths ?? [];
+  if (deletedPaths.length)
+    await supabase.storage.from("worksite-photos").remove(deletedPaths);
+}
+
+export async function deleteRemoteEntry(entryId: string) {
+  const supabase = getSupabaseBrowserClient();
+  const { data, error } = await supabase.rpc("delete_daily_progress", {
+    p_update_id: entryId,
+  });
+  if (error) throw error;
   const deletedPaths =
     (data as { deleted_paths?: string[] } | null)?.deleted_paths ?? [];
   if (deletedPaths.length)

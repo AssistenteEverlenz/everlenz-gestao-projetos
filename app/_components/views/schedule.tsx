@@ -34,7 +34,9 @@ type Props = {
   metrics: { overall: number; active: number };
   addTask: (task: Task) => void;
   editTask: (task: Task) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
   editEntry: (entry: JournalEntry) => Promise<void>;
+  deleteEntry: (entry: JournalEntry) => Promise<void>;
   reorderTasks: (tasks: Task[]) => Promise<void>;
   updateTaskProgress: (id: string, progress: number) => void;
   setToast: (value: string) => void;
@@ -57,6 +59,11 @@ const formatDate = (value: string) =>
       year: "numeric",
     })
     .replace(" de ", " ");
+const shiftDate = (value: string, days: number) => {
+  const date = toDate(value);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+};
 
 export function Schedule({
   project,
@@ -66,7 +73,9 @@ export function Schedule({
   metrics,
   addTask,
   editTask,
+  deleteTask,
   editEntry,
+  deleteEntry,
   reorderTasks,
   updateTaskProgress,
   setToast,
@@ -541,11 +550,7 @@ export function Schedule({
                     className="task-row"
                     onClick={() => setSelected(task)}
                   >
-                    <span>{task.code}</span>
-                    <span
-                      className="task-name-cell"
-                      style={{ paddingLeft: taskDepth(task) * 18 }}
-                    >
+                    <span className="task-eap-cell">
                       {childCount > 0 && (
                         <span
                           className="tree-toggle"
@@ -563,6 +568,12 @@ export function Schedule({
                           {collapsedIds.has(task.id) ? "›" : "⌄"}
                         </span>
                       )}
+                      <b>{task.code}</b>
+                    </span>
+                    <span
+                      className="task-name-cell"
+                      style={{ paddingLeft: taskDepth(task) * 18 }}
+                    >
                       <strong>{task.name}</strong>
                       <small>
                         {task.responsible || "Sem responsável"}
@@ -804,28 +815,41 @@ export function Schedule({
                   </strong>
                 </span>
               </div>
-              <label className="range-field">
-                <span>
-                  Avanço físico <strong>{selected.progress}%</strong>
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={selected.progress}
-                  onChange={(event) =>
-                    setSelected({
-                      ...selected,
-                      progress: Number(event.target.value),
-                    })
-                  }
-                />
-                <div>
-                  <small>0%</small>
-                  <small>50%</small>
-                  <small>100%</small>
+              {tasks.some((task) => task.parentId === selected.id) ? (
+                <div className="parent-progress-note">
+                  <Icon name="trend" />
+                  <div>
+                    <strong>Avanço consolidado: {selected.progress}%</strong>
+                    <span>
+                      Este percentual é calculado automaticamente a partir dos
+                      subitens e não pode ser alterado manualmente.
+                    </span>
+                  </div>
                 </div>
-              </label>
+              ) : (
+                <label className="range-field">
+                  <span>
+                    Avanço físico <strong>{selected.progress}%</strong>
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={selected.progress}
+                    onChange={(event) =>
+                      setSelected({
+                        ...selected,
+                        progress: Number(event.target.value),
+                      })
+                    }
+                  />
+                  <div>
+                    <small>0%</small>
+                    <small>50%</small>
+                    <small>100%</small>
+                  </div>
+                </label>
+              )}
               <div className="task-history-callout">
                 <Icon name="journal" />
                 <div>
@@ -866,6 +890,33 @@ export function Schedule({
                 >
                   <Icon name="settings" /> Editar dados
                 </button>
+                <button
+                  className="danger-btn"
+                  disabled={
+                    entries.some((entry) => entry.taskId === selected.id) ||
+                    tasks.some((task) => task.parentId === selected.id)
+                  }
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        `Excluir definitivamente a atividade “${selected.name}”?`,
+                      )
+                    )
+                      return;
+                    try {
+                      await deleteTask(selected.id);
+                      setSelected(null);
+                    } catch (cause) {
+                      setToast(
+                        cause instanceof Error
+                          ? cause.message
+                          : "Não foi possível excluir a atividade.",
+                      );
+                    }
+                  }}
+                >
+                  Excluir atividade
+                </button>
                 <span />
                 <button
                   className="secondary-btn"
@@ -873,16 +924,18 @@ export function Schedule({
                 >
                   Fechar
                 </button>
-                <button
-                  className="primary-btn"
-                  onClick={() => {
-                    updateTaskProgress(selected.id, selected.progress);
-                    setSelected(null);
-                    setToast("Progresso manual atualizado.");
-                  }}
-                >
-                  Salvar avanço
-                </button>
+                {!tasks.some((task) => task.parentId === selected.id) && (
+                  <button
+                    className="primary-btn"
+                    onClick={() => {
+                      updateTaskProgress(selected.id, selected.progress);
+                      setSelected(null);
+                      setToast("Progresso manual atualizado.");
+                    }}
+                  >
+                    Salvar avanço
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -894,6 +947,7 @@ export function Schedule({
           entries={entries.filter((entry) => entry.taskId === historyTask.id)}
           onClose={() => setHistoryTask(null)}
           onUpdate={editEntry}
+          onDelete={deleteEntry}
         />
       )}
     </div>
@@ -952,6 +1006,33 @@ function TaskForm({
   const generatedCode = parentId
     ? `${tasks.find((task) => task.id === parentId)?.code ?? "1"}.${siblingPosition}`
     : String(siblingPosition);
+  function synchronizeDependency(
+    nextDependencyId: string,
+    nextType = dependencyType,
+    nextLag = lagDays,
+  ) {
+    const predecessor = tasks.find((task) => task.id === nextDependencyId);
+    if (!predecessor) return;
+    const activityDuration = Math.max(
+      1,
+      daysBetween(plannedStart, plannedEnd) + 1,
+    );
+    if (nextType === "FS" || nextType === "SS") {
+      const start = shiftDate(
+        nextType === "FS" ? predecessor.plannedEnd : predecessor.plannedStart,
+        nextLag,
+      );
+      setPlannedStart(start);
+      setPlannedEnd(shiftDate(start, activityDuration - 1));
+    } else {
+      const end = shiftDate(
+        nextType === "FF" ? predecessor.plannedEnd : predecessor.plannedStart,
+        nextLag,
+      );
+      setPlannedEnd(end);
+      setPlannedStart(shiftDate(end, -(activityDuration - 1)));
+    }
+  }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -1100,7 +1181,11 @@ function TaskForm({
         <span>Atividade predecessora</span>
         <select
           value={dependencyId}
-          onChange={(event) => setDependencyId(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value;
+            setDependencyId(value);
+            if (value) synchronizeDependency(value);
+          }}
         >
           <option value="">Sem dependência</option>
           {availableTasks.map((task) => (
@@ -1110,30 +1195,40 @@ function TaskForm({
           ))}
         </select>
       </label>
-      <label className="dependency-fields">
-        <span>Relação e espera</span>
-        <span>
-          <select
-            value={dependencyType}
-            disabled={!dependencyId}
-            onChange={(event) =>
-              setDependencyType(event.target.value as DependencyType)
-            }
-          >
-            <option value="FS">Término → Início (FS)</option>
-            <option value="SS">Início → Início (SS)</option>
-            <option value="FF">Término → Término (FF)</option>
-            <option value="SF">Início → Término (SF)</option>
-          </select>
-          <input
-            aria-label="Dias de espera"
-            type="number"
-            disabled={!dependencyId}
-            value={lagDays}
-            onChange={(event) => setLagDays(Number(event.target.value))}
-          />
-        </span>
-      </label>
+      {dependencyId && (
+        <label className="dependency-fields">
+          <span>Relação e defasagem</span>
+          <span>
+            <select
+              value={dependencyType}
+              onChange={(event) => {
+                const value = event.target.value as DependencyType;
+                setDependencyType(value);
+                synchronizeDependency(dependencyId, value, lagDays);
+              }}
+            >
+              <option value="FS">Término → Início (FS)</option>
+              <option value="SS">Início → Início (SS)</option>
+              <option value="FF">Término → Término (FF)</option>
+              <option value="SF">Início → Término (SF)</option>
+            </select>
+            <input
+              aria-label="Defasagem em dias, positiva ou negativa"
+              title="Use dias positivos para esperar e negativos para antecipar"
+              type="number"
+              value={lagDays}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setLagDays(value);
+                synchronizeDependency(dependencyId, dependencyType, value);
+              }}
+            />
+          </span>
+          <small>
+            0 dias alinha as datas; use + para espera e − para antecipação.
+          </small>
+        </label>
+      )}
       <div className="task-checks">
         <label>
           <input

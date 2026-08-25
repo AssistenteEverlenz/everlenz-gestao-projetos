@@ -35,6 +35,8 @@ import {
   approveRemoteStatusReport,
   createRemoteProject,
   createRemoteTask,
+  deleteRemoteEntry,
+  deleteRemoteTask,
   ensureRemoteStatusReport,
   getProfile,
   inviteRemoteMember,
@@ -302,6 +304,12 @@ export function Workspace() {
   }
 
   function updateTaskProgress(id: string, progress: number) {
+    if (!workspace || workspace.tasks.some((task) => task.parentId === id)) {
+      setToast(
+        "O avanço do item-pai é calculado automaticamente pelos seus subitens.",
+      );
+      return;
+    }
     updateCurrent((current) => ({
       ...current,
       tasks: withRecalculatedProgress(current.tasks, id, progress),
@@ -373,6 +381,35 @@ export function Workspace() {
     setToast("Ordem e hierarquia do Gantt atualizadas.");
   }
 
+  async function deleteTask(taskId: string) {
+    if (!workspace) return;
+    if (workspace.tasks.some((task) => task.parentId === taskId))
+      throw new Error(
+        "Exclua ou mova os subitens antes de excluir este item-pai.",
+      );
+    if (workspace.entries.some((entry) => entry.taskId === taskId))
+      throw new Error(
+        "Esta atividade possui Diário de Obra e não pode ser excluída.",
+      );
+    if (remoteMode) await deleteRemoteTask(workspace.project.id, taskId);
+    const normalized = normalizeTaskHierarchy(
+      workspace.tasks
+        .filter((task) => task.id !== taskId)
+        .map((task) =>
+          task.dependencyId === taskId
+            ? {
+                ...task,
+                dependencyId: undefined,
+                dependencyType: undefined,
+                lagDays: undefined,
+              }
+            : task,
+        ),
+    );
+    updateCurrent((current) => ({ ...current, tasks: normalized }));
+    setToast("Atividade excluída e EAP reorganizada.");
+  }
+
   function addEntry(entry: JournalEntry) {
     if (!workspace) return;
     const applyEntry = () =>
@@ -430,6 +467,42 @@ export function Workspace() {
       }));
     }
     setToast("Diário de obra atualizado e avanço recalculado.");
+  }
+
+  async function deleteEntry(entry: JournalEntry) {
+    if (!workspace) return;
+    if (remoteMode) {
+      await deleteRemoteEntry(entry.id);
+      setRemoteLoading(true);
+      setReloadToken((value) => value + 1);
+    } else {
+      const remaining = workspace.entries.filter(
+        (item) => item.id !== entry.id,
+      );
+      const taskEntries = remaining
+        .filter((item) => item.taskId === entry.taskId)
+        .sort((a, b) =>
+          `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`),
+        );
+      let running = 0;
+      const recalculated = taskEntries.map((item) => {
+        const next = {
+          ...item,
+          progressBefore: running,
+          progressAfter: Math.min(100, running + item.progressAdded),
+        };
+        running = next.progressAfter;
+        return next;
+      });
+      updateCurrent((current) => ({
+        ...current,
+        entries: remaining.map(
+          (item) => recalculated.find((next) => next.id === item.id) ?? item,
+        ),
+        tasks: withRecalculatedProgress(current.tasks, entry.taskId, running),
+      }));
+    }
+    setToast("Diário excluído e avanço da atividade recalculado.");
   }
 
   function setMembers(value: React.SetStateAction<Member[]>) {
@@ -740,14 +813,21 @@ export function Workspace() {
               {...common}
               addTask={addTask}
               editTask={editTask}
+              deleteTask={deleteTask}
               editEntry={editEntry}
+              deleteEntry={deleteEntry}
               reorderTasks={reorderTasks}
               updateTaskProgress={updateTaskProgress}
               setToast={setToast}
             />
           )}
           {workspace && common && view === "journal" && (
-            <Journal {...common} addEntry={addEntry} editEntry={editEntry} />
+            <Journal
+              {...common}
+              addEntry={addEntry}
+              editEntry={editEntry}
+              deleteEntry={deleteEntry}
+            />
           )}
           {workspace && common && view === "reports" && (
             <Reports

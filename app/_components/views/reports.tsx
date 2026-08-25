@@ -167,7 +167,11 @@ export function Reports({
               <div className="print-timeline">
                 <i
                   className="print-planned-bar"
-                  style={{ ...ganttBar(task), background: palette.period }}
+                  style={{
+                    ...ganttBar(task),
+                    background: palette.period,
+                    color: palette.period,
+                  }}
                 >
                   <b
                     style={{
