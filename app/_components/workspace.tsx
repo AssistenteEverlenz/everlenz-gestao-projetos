@@ -15,7 +15,7 @@ import { Reports } from "./views/reports";
 import { Team } from "./views/team";
 import { Settings } from "./views/settings";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { approveRemoteStatusReport, createRemoteProject, createRemoteTask, ensureRemoteStatusReport, getProfile, inviteRemoteMember, loadAvailableWorkspaces, recordRemoteEntry, updateRemoteEntry, updateRemoteTask, updateRemoteTaskProgress } from "@/lib/supabase/repository";
+import { approveRemoteStatusReport, createRemoteProject, createRemoteTask, ensureRemoteStatusReport, getProfile, inviteRemoteMember, loadAvailableWorkspaces, recordRemoteEntry, reorderRemoteTasks, updateRemoteEntry, updateRemoteTask, updateRemoteTaskProgress } from "@/lib/supabase/repository";
 
 const nav: Array<{ id: ViewId; label: string; short: string; icon: IconName }> = [
   { id: "overview", label: "Visão geral", short: "Início", icon: "home" },
@@ -196,6 +196,13 @@ export function Workspace() {
     setToast("Atividade atualizada no cronograma.");
   }
 
+  async function reorderTasks(tasks: Task[]) {
+    if (!workspace) return;
+    if (remoteMode) await reorderRemoteTasks(workspace.project.id, tasks);
+    updateCurrent((current) => ({ ...current, tasks }));
+    setToast("Ordem e hierarquia do Gantt atualizadas.");
+  }
+
   function addEntry(entry: JournalEntry) {
     if (!workspace) return;
     const applyEntry = () => updateCurrent((current) => ({
@@ -342,7 +349,7 @@ export function Workspace() {
         <div className="content-area">
           {!workspace && <EmptyWorkspace onCreate={() => setProjectModal(true)} />}
           {workspace && common && view === "overview" && <Overview {...common} />}
-          {workspace && common && view === "schedule" && <Schedule {...common} addTask={addTask} editTask={editTask} editEntry={editEntry} updateTaskProgress={updateTaskProgress} setToast={setToast} />}
+          {workspace && common && view === "schedule" && <Schedule {...common} addTask={addTask} editTask={editTask} editEntry={editEntry} reorderTasks={reorderTasks} updateTaskProgress={updateTaskProgress} setToast={setToast} />}
           {workspace && common && view === "journal" && <Journal {...common} addEntry={addEntry} editEntry={editEntry} />}
           {workspace && common && view === "reports" && <Reports {...common} ensureReport={ensureReport} approveReport={approveReport} setToast={setToast} />}
           {workspace && common && view === "team" && <Team {...common} inviteMember={inviteMember} setToast={setToast} />}

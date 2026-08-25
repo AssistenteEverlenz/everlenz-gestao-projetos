@@ -286,6 +286,16 @@ export async function updateRemoteTask(projectId: string, task: Task, members: M
   }
 }
 
+export async function reorderRemoteTasks(projectId: string, tasks: Task[]) {
+  const supabase = getSupabaseBrowserClient();
+  const results = await Promise.all(tasks.map((task, sortOrder) => supabase.from("tasks").update({
+    parent_id: task.parentId ?? null,
+    sort_order: sortOrder,
+  }).eq("id", task.id).eq("project_id", projectId)));
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw failed.error;
+}
+
 export async function updateRemoteTaskProgress(taskId: string, progress: number) {
   const { error } = await getSupabaseBrowserClient().from("tasks").update({ progress }).eq("id", taskId);
   if (error) throw error;
