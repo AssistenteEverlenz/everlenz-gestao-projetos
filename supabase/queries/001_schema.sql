@@ -110,7 +110,7 @@ create table public.daily_logs (
 create table public.task_updates (
   id uuid primary key default gen_random_uuid(),
   daily_log_id uuid not null references public.daily_logs(id) on delete cascade,
-  task_id uuid not null references public.tasks(id) on delete restrict,
+  task_id uuid not null references public.tasks(id) on delete cascade,
   title text not null,
   description text not null,
   progress_before numeric(5,2) not null check (progress_before between 0 and 100),

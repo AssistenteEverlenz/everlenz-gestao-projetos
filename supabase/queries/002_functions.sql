@@ -42,8 +42,14 @@ end;
 $$;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
 
+create or replace function public.has_project_role(target_project_id uuid, allowed_roles public.project_role[])
+returns boolean language sql stable security definer set search_path = ''
+as $$ select exists (select 1 from public.project_members pm where pm.project_id = target_project_id and pm.user_id = auth.uid() and pm.role = any(allowed_roles)) $$;
+revoke execute on function public.has_project_role(uuid,public.project_role[]) from public, anon;
+grant execute on function public.has_project_role(uuid,public.project_role[]) to authenticated;
+
 create or replace function public.create_organization(p_name text, p_slug text)
-returns uuid language plpgsql security invoker set search_path = ''
+returns uuid language plpgsql security definer set search_path = ''
 as $$
 declare v_org_id uuid;
 begin
@@ -60,10 +66,11 @@ $$;
 create or replace function public.create_project_with_owner(
   p_name text, p_client_name text, p_address text, p_start_date date,
   p_planned_end_date date, p_contract_number text default null, p_description text default null
-) returns uuid language plpgsql security invoker set search_path = ''
+) returns uuid language plpgsql security definer set search_path = ''
 as $$
 declare v_project_id uuid; v_org_id uuid;
 begin
+  if auth.uid() is null then raise exception 'authentication required'; end if;
   select organization_id into v_org_id from public.profiles where id = auth.uid();
   if v_org_id is null then raise exception 'user does not belong to an organization'; end if;
   insert into public.projects(organization_id, name, client_name, address, start_date, planned_end_date, contract_number, description, created_by)
@@ -84,12 +91,15 @@ create or replace function public.record_daily_progress(
   p_crew_count integer default 0,
   p_weather text default null,
   p_photos jsonb default '[]'::jsonb
-) returns uuid language plpgsql security invoker set search_path = ''
+) returns uuid language plpgsql security definer set search_path = ''
 as $$
 declare
   v_log_id uuid; v_update_id uuid; v_before numeric(5,2); v_after numeric(5,2); v_photo jsonb; v_index integer := 0;
 begin
   if auth.uid() is null then raise exception 'authentication required'; end if;
+  if not public.has_project_role(p_project_id, array['admin','manager','engineer','foreman']::public.project_role[]) then
+    raise exception 'user cannot record progress for this project';
+  end if;
   if p_progress_delta < 0 then raise exception 'progress delta cannot be negative'; end if;
 
   select progress into v_before from public.tasks

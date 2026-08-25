@@ -27,7 +27,7 @@ as
 select
   t.*, parent.wbs as parent_wbs, parent.name as parent_name,
   pred.wbs as predecessor_wbs, dep.dependency_type, dep.lag_days,
-  responsible.full_name as responsible_name
+  responsible.full_name as responsible_name, pred.id as predecessor_id
 from public.tasks t
 left join public.tasks parent on parent.id = t.parent_id
 left join public.task_dependencies dep on dep.successor_id = t.id

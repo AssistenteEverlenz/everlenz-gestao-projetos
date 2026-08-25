@@ -1,5 +1,17 @@
 # Supabase do Em Dia
 
+## Ambiente atual
+
+- Project ref: lpfoxpqezcfdvdecfdos
+- URL: https://lpfoxpqezcfdvdecfdos.supabase.co
+- Migrations aplicadas em 25/08/2026
+- Site URL do Auth: https://emdia.everlenz.com.br
+- Buckets privados: worksite-photos e project-files
+
+A aplicação usa a publishable key no navegador e exige uma sessão autenticada.
+O token da Management API serve somente para provisionamento e deve ser revogado
+depois da configuração.
+
 ## Situação do projeto antigo
 
 O projeto exibido na captura foi pausado em 20/06/2025 e ultrapassou a janela de

@@ -16,7 +16,7 @@ export type Project = {
 export type DependencyType = "FS" | "SS" | "FF" | "SF";
 
 export type Task = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   phase: string;
@@ -26,8 +26,8 @@ export type Task = {
   weight: number;
   baselineStart?: string;
   baselineEnd?: string;
-  parentId?: number;
-  dependencyId?: number;
+  parentId?: string;
+  dependencyId?: string;
   dependencyType?: DependencyType;
   lagDays?: number;
   responsible: string;
@@ -41,7 +41,7 @@ export type JournalEntry = {
   id: string;
   date: string;
   time: string;
-  taskId: number;
+  taskId: string;
   title: string;
   description: string;
   progressBefore: number;
@@ -61,10 +61,12 @@ export type Member = {
   initials: string;
   color: string;
   online: boolean;
+  pending?: boolean;
 };
 
 export type ProjectWorkspace = {
   project: Project;
+  organizationId?: string;
   tasks: Task[];
   entries: JournalEntry[];
   members: Member[];

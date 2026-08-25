@@ -2,7 +2,9 @@
 /* eslint-disable @next/next/no-img-element -- identidade visual local */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { currentUser, initialWorkspaces } from "./data";
+import { AuthScreen, ConnectionError, LoadingScreen, OrganizationSetup } from "./auth";
 import { Icon, type IconName } from "./icons";
 import type { JournalEntry, Member, Project, ProjectWorkspace, Task, ViewId } from "./types";
 import { Modal } from "./ui";
@@ -12,6 +14,8 @@ import { Journal } from "./views/journal";
 import { Reports } from "./views/reports";
 import { Team } from "./views/team";
 import { Settings } from "./views/settings";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { createRemoteProject, createRemoteTask, ensureRemoteStatusReport, getProfile, inviteRemoteMember, loadAvailableWorkspaces, recordRemoteEntry, updateRemoteTaskProgress } from "@/lib/supabase/repository";
 
 const nav: Array<{ id: ViewId; label: string; short: string; icon: IconName }> = [
   { id: "overview", label: "Visão geral", short: "Início", icon: "home" },
@@ -30,16 +34,16 @@ const titles: Record<ViewId, { eyebrow: string; title: string; description: stri
   settings: { eyebrow: "PREFERÊNCIAS", title: "Configurações", description: "Personalize a experiência e os padrões dos relatórios." },
 };
 
-const storageKey = "emdia-workspaces-v2";
+const storageKey = "emdia-workspaces-v3";
 
-function withRecalculatedProgress(tasks: Task[], taskId: number, progress: number) {
+function withRecalculatedProgress(tasks: Task[], taskId: string, progress: number) {
   let next = tasks.map((task) => task.id === taskId ? { ...task, progress: Math.max(0, Math.min(100, progress)) } : task);
   let parentId = next.find((task) => task.id === taskId)?.parentId;
   while (parentId) {
     const children = next.filter((task) => task.parentId === parentId);
     const weight = children.reduce((sum, child) => sum + child.weight, 0);
     const parentProgress = weight ? Math.round(children.reduce((sum, child) => sum + child.progress * child.weight, 0) / weight) : 0;
-    const currentParentId: number = parentId;
+    const currentParentId: string = parentId;
     next = next.map((task) => task.id === currentParentId ? { ...task, progress: parentProgress } : task);
     parentId = next.find((task) => task.id === currentParentId)?.parentId;
   }
@@ -47,11 +51,18 @@ function withRecalculatedProgress(tasks: Task[], taskId: number, progress: numbe
 }
 
 export function Workspace() {
+  const remoteMode = isSupabaseConfigured();
   const [view, setView] = useState<ViewId>("overview");
   const [workspaces, setWorkspaces] = useState<ProjectWorkspace[]>(initialWorkspaces);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [dark, setDark] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [authReady, setAuthReady] = useState(!remoteMode);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [remoteLoading, setRemoteLoading] = useState(remoteMode);
+  const [needsOrganization, setNeedsOrganization] = useState(false);
+  const [remoteError, setRemoteError] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
   const [projectMenu, setProjectMenu] = useState(false);
   const [projectModal, setProjectModal] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -64,8 +75,8 @@ export function Workspace() {
     const frame = window.requestAnimationFrame(() => {
       const savedTheme = window.localStorage.getItem("emdia-theme");
       setDark(savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
-      const saved = window.localStorage.getItem(storageKey);
-      if (saved) {
+      const saved = remoteMode ? null : window.localStorage.getItem(storageKey);
+      if (saved && !remoteMode) {
         try {
           const parsed = JSON.parse(saved) as ProjectWorkspace[];
           setWorkspaces(parsed);
@@ -81,7 +92,38 @@ export function Workspace() {
       window.cancelAnimationFrame(frame);
       if (collapseTimer.current) clearTimeout(collapseTimer.current);
     };
-  }, []);
+  }, [remoteMode]);
+
+  useEffect(() => {
+    if (!remoteMode) return;
+    const supabase = getSupabaseBrowserClient();
+    supabase.auth.getSession().then(({ data }) => {
+      setAuthUser(data.session?.user ?? null);
+      setAuthReady(true);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+      setAuthReady(true);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, [remoteMode]);
+
+  useEffect(() => {
+    if (!remoteMode || !authReady || !authUser) return;
+    let active = true;
+    loadAvailableWorkspaces(authUser.email ?? "").then(({ profile, workspaces: loaded }) => {
+      if (!active) return;
+      setNeedsOrganization(!profile.organization_id);
+      setWorkspaces(loaded);
+      setProjectId((current) => loaded.some((item) => item.project.id === current) ? current : loaded[0]?.project.id ?? null);
+      setRemoteLoading(false);
+    }).catch((cause) => {
+      if (!active) return;
+      setRemoteError(cause instanceof Error ? cause.message : "Falha ao consultar o banco.");
+      setRemoteLoading(false);
+    });
+    return () => { active = false; };
+  }, [authReady, authUser, reloadToken, remoteMode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -89,13 +131,13 @@ export function Workspace() {
   }, [dark]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || remoteMode) return;
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(workspaces));
     } catch {
       console.warn("Limite do modo local atingido. Configure o Supabase para armazenar mais fotos.");
     }
-  }, [hydrated, workspaces]);
+  }, [hydrated, remoteMode, workspaces]);
 
   useEffect(() => {
     if (!toast) return;
@@ -121,21 +163,41 @@ export function Workspace() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function updateTaskProgress(id: number, progress: number) {
+  function updateTaskProgress(id: string, progress: number) {
     updateCurrent((current) => ({ ...current, tasks: withRecalculatedProgress(current.tasks, id, progress) }));
+    if (remoteMode) void updateRemoteTaskProgress(id, progress).catch((cause) => setToast(cause instanceof Error ? cause.message : "Falha ao atualizar a atividade."));
   }
 
   function addTask(task: Task) {
+    if (!workspace) return;
+    if (remoteMode) {
+      setToast("Salvando atividade no cronograma...");
+      void createRemoteTask(workspace.project.id, task, workspace.members, workspace.tasks.length).then(() => {
+        updateCurrent((current) => ({ ...current, tasks: [...current.tasks, task] }));
+        setToast("Atividade adicionada ao cronograma.");
+      }).catch((cause) => setToast(cause instanceof Error ? cause.message : "Não foi possível criar a atividade."));
+      return;
+    }
     updateCurrent((current) => ({ ...current, tasks: [...current.tasks, task] }));
     setToast("Atividade adicionada ao cronograma.");
   }
 
   function addEntry(entry: JournalEntry) {
-    updateCurrent((current) => ({
-      ...current,
-      entries: [entry, ...current.entries],
-      tasks: withRecalculatedProgress(current.tasks, entry.taskId, entry.progressAfter),
-    }));
+    if (!workspace) return;
+    const applyEntry = () => updateCurrent((current) => ({
+        ...current,
+        entries: [entry, ...current.entries],
+        tasks: withRecalculatedProgress(current.tasks, entry.taskId, entry.progressAfter),
+      }));
+    if (remoteMode) {
+      setToast("Enviando fotos e registrando a medição...");
+      void recordRemoteEntry(workspace, entry).then(() => {
+        applyEntry();
+        setToast("Registro salvo, evidências vinculadas e cronograma atualizado.");
+      }).catch((cause) => setToast(cause instanceof Error ? cause.message : "Não foi possível salvar o diário."));
+      return;
+    }
+    applyEntry();
     setToast("Registro salvo, evidências vinculadas e cronograma atualizado.");
   }
 
@@ -143,14 +205,36 @@ export function Workspace() {
     updateCurrent((current) => ({ ...current, members: typeof value === "function" ? value(current.members) : value }));
   }
 
-  function createProject(project: Project) {
-    const next: ProjectWorkspace = { project, tasks: [], entries: [], members: [currentUser] };
+  async function inviteMember(member: Member) {
+    if (!workspace) return;
+    if (remoteMode) await inviteRemoteMember(workspace.project.id, member);
+    setMembers((current) => [...current, remoteMode ? { ...member, pending: true } : member]);
+    setToast(remoteMode ? "Convite salvo. A pessoa deve acessar o Em Dia com esse e-mail." : "Convite adicionado à equipe.");
+  }
+
+  async function ensureReport(reportDate: string) {
+    if (!workspace || !remoteMode) return;
+    await ensureRemoteStatusReport(workspace.project.id, reportDate);
+  }
+
+  async function createProject(project: Project) {
+    let persistedProject = project;
+    if (remoteMode) {
+      const id = await createRemoteProject(project);
+      persistedProject = { ...project, id };
+    }
+    const next: ProjectWorkspace = { project: persistedProject, organizationId: remoteMode ? (await getProfileOrganization()) : undefined, tasks: [], entries: [], members: [remoteMode && authUser ? { ...currentUser, id: authUser.id, email: authUser.email ?? currentUser.email, name: authUser.user_metadata.full_name || currentUser.name } : currentUser] };
     setWorkspaces((current) => [...current, next]);
-    setProjectId(project.id);
+    setProjectId(persistedProject.id);
     setProjectModal(false);
     setProjectMenu(false);
     setView("schedule");
     setToast("Projeto criado. Comece estruturando o cronograma.");
+  }
+
+  async function getProfileOrganization() {
+    const profile = await getProfile();
+    return profile.organization_id ?? undefined;
   }
 
   function expandSidebar() {
@@ -167,6 +251,12 @@ export function Workspace() {
   }
 
   const common = workspace ? { project: workspace.project, tasks: workspace.tasks, entries: workspace.entries, members: workspace.members, navigate, metrics } : null;
+
+  if (remoteMode && !authReady) return <LoadingScreen />;
+  if (remoteMode && !authUser) return <AuthScreen />;
+  if (remoteMode && remoteLoading) return <LoadingScreen message="Carregando projetos e registros..." />;
+  if (remoteMode && remoteError) return <ConnectionError message={remoteError} onRetry={() => { setRemoteError(""); setRemoteLoading(true); setReloadToken((value) => value + 1); }} />;
+  if (remoteMode && needsOrganization) return <OrganizationSetup onReady={() => { setNeedsOrganization(false); setRemoteLoading(true); setReloadToken((value) => value + 1); }} />;
 
   return (
     <div className={`app-shell ${sidebarExpanded ? "sidebar-open" : "sidebar-compact"}`}>
@@ -202,10 +292,10 @@ export function Workspace() {
           <div className="mobile-brand"><img src="/emdia.svg" alt="" /><strong>em dia <span>BY EVERLENZ</span></strong></div>
           <div className="header-copy"><small>{workspace ? meta.eyebrow : "NOVO AMBIENTE DE PROJETOS"}</small><h1>{workspace ? meta.title : "Vamos colocar sua obra em dia"}</h1><p>{workspace ? meta.description : "Crie o primeiro projeto para montar o cronograma, registrar o campo e gerar relatórios."}</p></div>
           <div className="header-actions">
-            <div className="sync-state"><span /> {process.env.NEXT_PUBLIC_SUPABASE_URL && (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ? "Supabase configurado" : "Modo local"}</div>
+            <div className="sync-state"><span /> {remoteMode ? "Supabase sincronizado" : "Modo local"}</div>
             <button className="icon-btn" onClick={() => setDark((value) => !value)} aria-label="Alternar tema"><Icon name={dark ? "sun" : "moon"} /></button>
             <button className="icon-btn notification" aria-label="Notificações"><Icon name="bell" /></button>
-            <button className="avatar avatar-dark desktop-avatar">GA</button>
+            <button className="avatar avatar-dark desktop-avatar" onClick={() => remoteMode && getSupabaseBrowserClient().auth.signOut()} title={remoteMode ? "Sair" : undefined}>GA</button>
           </div>
         </header>
 
@@ -214,8 +304,8 @@ export function Workspace() {
           {workspace && common && view === "overview" && <Overview {...common} />}
           {workspace && common && view === "schedule" && <Schedule {...common} addTask={addTask} updateTaskProgress={updateTaskProgress} setToast={setToast} />}
           {workspace && common && view === "journal" && <Journal {...common} addEntry={addEntry} />}
-          {workspace && common && view === "reports" && <Reports {...common} setToast={setToast} />}
-          {workspace && common && view === "team" && <Team {...common} setMembers={setMembers} setToast={setToast} />}
+          {workspace && common && view === "reports" && <Reports {...common} ensureReport={ensureReport} setToast={setToast} />}
+          {workspace && common && view === "team" && <Team {...common} inviteMember={inviteMember} setToast={setToast} />}
           {view === "settings" && <Settings dark={dark} setDark={setDark} setToast={setToast} />}
         </div>
       </main>
@@ -235,7 +325,7 @@ function EmptyWorkspace({ onCreate }: { onCreate: () => void }) {
   return <section className="empty-workspace glass"><span className="empty-workspace-icon"><Icon name="building" /></span><span className="overline">PRIMEIRO PASSO</span><h2>Crie o projeto da obra</h2><p>O ambiente começa vazio. Depois de cadastrar os dados básicos, você poderá estruturar a EAP no Gantt e liberar o Diário de Obra para a equipe de campo.</p><div className="empty-workspace-flow"><span><b>1</b> Projeto</span><i/><span><b>2</b> Cronograma</span><i/><span><b>3</b> Diário</span><i/><span><b>4</b> Relatório</span></div><button className="primary-btn" onClick={onCreate}><Icon name="plus" /> Criar primeiro projeto</button></section>;
 }
 
-function ProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (project: Project) => void }) {
+function ProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (project: Project) => Promise<void> }) {
   const today = new Date().toISOString().slice(0, 10);
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
@@ -244,9 +334,13 @@ function ProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (p
   const [end, setEnd] = useState("");
   const [contractNumber, setContractNumber] = useState("");
   const [description, setDescription] = useState("");
-  function submit(event: React.FormEvent) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
-    onCreate({ id: crypto.randomUUID(), name, client, location, start, end, contractNumber, description, progress: 0, status: "Planejamento" });
+    setSaving(true); setError("");
+    try { await onCreate({ id: crypto.randomUUID(), name, client, location, start, end, contractNumber, description, progress: 0, status: "Planejamento" }); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível criar o projeto."); setSaving(false); }
   }
-  return <Modal title="Criar novo projeto" subtitle="Cadastre a obra para iniciar o cronograma do zero." onClose={onClose} wide><form className="project-form" onSubmit={submit}><label className="full"><span>Nome da obra</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Residência Reserva da Serra" /></label><label><span>Cliente</span><input required value={client} onChange={(event) => setClient(event.target.value)} placeholder="Nome ou razão social" /></label><label><span>Número do contrato</span><input value={contractNumber} onChange={(event) => setContractNumber(event.target.value)} placeholder="Opcional" /></label><label className="full"><span>Local da obra</span><input required value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Cidade · UF ou endereço completo" /></label><label><span>Data de início</span><input required type="date" value={start} onChange={(event) => setStart(event.target.value)} /></label><label><span>Previsão de término</span><input required type="date" min={start} value={end} onChange={(event) => setEnd(event.target.value)} /></label><label className="full"><span>Descrição e escopo</span><textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Resumo técnico do escopo da obra..." /></label><div className="modal-actions full"><button type="button" className="secondary-btn" onClick={onClose}>Cancelar</button><button className="primary-btn"><Icon name="arrow" /> Criar e montar cronograma</button></div></form></Modal>;
+  return <Modal title="Criar novo projeto" subtitle="Cadastre a obra para iniciar o cronograma do zero." onClose={onClose} wide><form className="project-form" onSubmit={submit}><label className="full"><span>Nome da obra</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Residência Reserva da Serra" /></label><label><span>Cliente</span><input required value={client} onChange={(event) => setClient(event.target.value)} placeholder="Nome ou razão social" /></label><label><span>Número do contrato</span><input value={contractNumber} onChange={(event) => setContractNumber(event.target.value)} placeholder="Opcional" /></label><label className="full"><span>Local da obra</span><input required value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Cidade · UF ou endereço completo" /></label><label><span>Data de início</span><input required type="date" value={start} onChange={(event) => setStart(event.target.value)} /></label><label><span>Previsão de término</span><input required type="date" min={start} value={end} onChange={(event) => setEnd(event.target.value)} /></label><label className="full"><span>Descrição e escopo</span><textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Resumo técnico do escopo da obra..." /></label>{error && <div className="access-message full"><Icon name="alert"/>{error}</div>}<div className="modal-actions full"><button type="button" className="secondary-btn" onClick={onClose}>Cancelar</button><button className="primary-btn" disabled={saving}><Icon name="arrow" /> {saving ? "Criando projeto..." : "Criar e montar cronograma"}</button></div></form></Modal>;
 }
