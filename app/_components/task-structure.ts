@@ -56,6 +56,40 @@ export function normalizeTaskHierarchy(tasks: Task[]) {
         String(result.filter((item) => !item.parentId).length + 1),
       ),
     );
+  return deriveParentPeriods(result);
+}
+
+export function deriveParentPeriods(tasks: Task[]) {
+  const result = tasks.map((task) => ({ ...task }));
+  for (let index = result.length - 1; index >= 0; index -= 1) {
+    const parent = result[index];
+    const children = result.filter((task) => task.parentId === parent.id);
+    if (!children.length) continue;
+    parent.plannedStart = children.reduce(
+      (value, child) =>
+        child.plannedStart < value ? child.plannedStart : value,
+      children[0].plannedStart,
+    );
+    parent.plannedEnd = children.reduce(
+      (value, child) => (child.plannedEnd > value ? child.plannedEnd : value),
+      children[0].plannedEnd,
+    );
+    const baselineChildren = children.filter(
+      (child) => child.baselineStart && child.baselineEnd,
+    );
+    if (baselineChildren.length) {
+      parent.baselineStart = baselineChildren.reduce(
+        (value, child) =>
+          child.baselineStart! < value ? child.baselineStart! : value,
+        baselineChildren[0].baselineStart!,
+      );
+      parent.baselineEnd = baselineChildren.reduce(
+        (value, child) =>
+          child.baselineEnd! > value ? child.baselineEnd! : value,
+        baselineChildren[0].baselineEnd!,
+      );
+    }
+  }
   return result;
 }
 

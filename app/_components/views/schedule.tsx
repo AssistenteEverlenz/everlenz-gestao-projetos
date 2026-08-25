@@ -573,20 +573,28 @@ export function Schedule({
                   0,
                   Math.min(
                     995,
-                    (daysBetween(project.start, targetDate) / projectDays) *
+                    ((daysBetween(project.start, targetDate) +
+                      (relation === "FF" || relation === "SF" ? 1 : 0)) /
+                      projectDays) *
                       1000,
                   ),
                 );
                 const sourceY = sourceIndex * 56 + 28;
                 const targetY = targetIndex * 56 + 28;
-                const middleX =
-                  sourceX <= targetX
-                    ? sourceX + Math.max(14, (targetX - sourceX) / 2)
-                    : sourceX + 18;
+                const sourceUsesFinish = relation === "FS" || relation === "FF";
+                const targetUsesFinish = relation === "FF" || relation === "SF";
+                const sourceExitX = Math.max(
+                  5,
+                  Math.min(995, sourceX + (sourceUsesFinish ? 12 : -12)),
+                );
+                const targetEntryX = Math.max(
+                  5,
+                  Math.min(995, targetX + (targetUsesFinish ? 10 : -10)),
+                );
                 return (
                   <polyline
                     key={`${predecessor.id}-${task.id}`}
-                    points={`${sourceX},${sourceY} ${middleX},${sourceY} ${middleX},${targetY} ${targetX},${targetY}`}
+                    points={`${sourceX},${sourceY} ${sourceExitX},${sourceY} ${sourceExitX},${targetY} ${targetEntryX},${targetY} ${targetX},${targetY}`}
                     markerEnd="url(#dependency-arrow)"
                   />
                 );
@@ -1176,6 +1184,9 @@ function TaskForm({
   onSave: (task: Task) => void | Promise<void>;
 }) {
   const workDays = projectWorkDays(project.workDays);
+  const derivesPeriod = Boolean(
+    initial && tasks.some((task) => task.parentId === initial.id),
+  );
   const [nextId] = useState(() => initial?.id ?? crypto.randomUUID());
   const [name, setName] = useState(initial?.name ?? "");
   const [phase, setPhase] = useState(initial?.phase ?? "");
@@ -1329,6 +1340,7 @@ function TaskForm({
           min={project.start}
           max={project.end}
           required
+          disabled={derivesPeriod}
           value={plannedStart}
           onChange={(event) => {
             const value = event.target.value;
@@ -1344,7 +1356,7 @@ function TaskForm({
           min={plannedStart}
           max={project.end}
           required
-          disabled={milestone}
+          disabled={milestone || derivesPeriod}
           value={milestone ? plannedStart : plannedEnd}
           onChange={(event) => {
             const value = event.target.value;
@@ -1359,7 +1371,7 @@ function TaskForm({
           type="number"
           min="1"
           required
-          disabled={milestone}
+          disabled={milestone || derivesPeriod}
           value={milestone ? 1 : durationWorkDays}
           onChange={(event) => {
             const value = Math.max(1, Number(event.target.value));
@@ -1372,6 +1384,7 @@ function TaskForm({
         <span>Início da linha de base</span>
         <input
           type="date"
+          disabled={derivesPeriod}
           value={baselineStart}
           onChange={(event) => setBaselineStart(event.target.value)}
         />
@@ -1381,7 +1394,7 @@ function TaskForm({
         <input
           type="date"
           min={baselineStart}
-          disabled={milestone}
+          disabled={milestone || derivesPeriod}
           value={milestone ? baselineStart : baselineEnd}
           onChange={(event) => setBaselineEnd(event.target.value)}
         />

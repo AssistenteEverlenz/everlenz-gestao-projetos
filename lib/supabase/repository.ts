@@ -459,7 +459,13 @@ export async function reorderRemoteTasks(projectId: string, tasks: Task[]) {
     tasks.map((task) =>
       supabase
         .from("tasks")
-        .update({ wbs: task.code })
+        .update({
+          wbs: task.code,
+          planned_start: task.plannedStart,
+          planned_end: task.plannedEnd,
+          baseline_start: task.baselineStart ?? null,
+          baseline_end: task.baselineEnd ?? null,
+        })
         .eq("id", task.id)
         .eq("project_id", projectId),
     ),

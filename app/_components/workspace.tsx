@@ -386,10 +386,8 @@ export function Workspace() {
 
   async function updateProjectWorkDays(workDays: number[]) {
     if (!workspace) return;
-    const tasks = rescheduleTasks(
-      workspace.tasks,
-      workspace.project.workDays,
-      workDays,
+    const tasks = normalizeTaskHierarchy(
+      rescheduleTasks(workspace.tasks, workspace.project.workDays, workDays),
     );
     if (remoteMode) {
       await updateRemoteProjectWorkDays(workspace.project.id, workDays);
