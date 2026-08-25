@@ -10,7 +10,7 @@ export function ProgressRing({ value, size = 64 }: { value: number; size?: numbe
 }
 
 export function StatusBadge({ value }: { value: string }) {
-  const kind = value === "No prazo" || value === "Concluído" || value === "Enviado" ? "success" : value === "Atenção" || value === "Em revisão" ? "warning" : "neutral";
+  const kind = value === "No prazo" || value === "Concluído" || value === "Enviado" || value === "Aprovado" ? "success" : value === "Atenção" || value === "Em revisão" ? "warning" : "neutral";
   return <span className={`status-badge ${kind}`}><i />{value}</span>;
 }
 

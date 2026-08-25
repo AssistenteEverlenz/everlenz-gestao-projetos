@@ -3,18 +3,27 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "../icons";
-import type { JournalEntry, Member, Project, Task, ViewId } from "../types";
+import type { JournalEntry, Member, Project, ReportSummary, Task, ViewId } from "../types";
 import { Modal, StatusBadge } from "../ui";
 
-type Props = { project: Project; tasks: Task[]; entries: JournalEntry[]; members: Member[]; navigate: (view: ViewId) => void; metrics: { overall: number; active: number }; ensureReport: (date: string) => Promise<void>; setToast: (value: string) => void };
+type Props = { project: Project; tasks: Task[]; entries: JournalEntry[]; members: Member[]; reports: ReportSummary[]; navigate: (view: ViewId) => void; metrics: { overall: number; active: number }; ensureReport: (date: string) => Promise<void>; approveReport: (date: string) => Promise<void>; setToast: (value: string) => void };
 const longDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
-export function Reports({ project, tasks, entries, metrics, navigate, ensureReport, setToast }: Props) {
+export function Reports({ project, tasks, entries, reports, metrics, navigate, ensureReport, approveReport, setToast }: Props) {
   const reportDates = useMemo(() => [...new Set(entries.map((entry) => entry.date))].sort().reverse(), [entries]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [openingDate, setOpeningDate] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
   const reportEntries = entries.filter((entry) => entry.date === selectedDate);
   const photos = reportEntries.flatMap((entry) => entry.photos.map((photo) => ({ photo: photo.url, entry })));
+  const selectedStatus = reports.find((report) => report.date === selectedDate)?.status ?? "review";
+
+  const statusLabel = (date: string) => {
+    const status = reports.find((report) => report.date === date)?.status;
+    if (status === "approved") return "Aprovado";
+    if (status === "sent") return "Enviado";
+    return "Em revisão";
+  };
 
   async function openReport(date: string) {
     setOpeningDate(date);
@@ -28,12 +37,24 @@ export function Reports({ project, tasks, entries, metrics, navigate, ensureRepo
     }
   }
 
+  async function handleApprove() {
+    if (!selectedDate || selectedStatus === "approved") return;
+    setApproving(true);
+    try {
+      await approveReport(selectedDate);
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "Não foi possível aprovar o relatório.");
+    } finally {
+      setApproving(false);
+    }
+  }
+
   if (!entries.length) return <section className="empty-schedule glass"><span className="empty-workspace-icon"><Icon name="report" /></span><span className="overline">STATUS REPORT AUTOMÁTICO</span><h2>O primeiro relatório nasce no campo</h2><p>Assim que a equipe lançar atividades no Diário de Obra, esta área organizará descrições, fotos, medições e o Gantt completo do projeto.</p><button className="primary-btn" onClick={() => navigate("journal")}><Icon name="plus"/> Fazer primeiro registro</button></section>;
 
   return <div className="view-stack reports-view">
     <section className="report-builder glass"><div className="builder-icon"><Icon name="spark"/></div><div><span className="overline">RELATÓRIO AUTOMÁTICO</span><h2>{reportDates.length} relatório{reportDates.length > 1 ? "s" : ""} gerado{reportDates.length > 1 ? "s" : ""} pelo diário.</h2><p>Cada documento reúne todos os registros do dia, as evidências fotográficas, as medições e a visão completa do cronograma.</p><div className="builder-chips"><span><Icon name="trend"/> {metrics.overall}% de avanço geral</span><span><Icon name="journal"/> {entries.length} registros</span><span><Icon name="camera"/> {entries.reduce((sum, entry) => sum + entry.photos.length, 0)} evidências</span></div></div><button className="primary-btn" disabled={openingDate !== null} onClick={() => void openReport(reportDates[0])}>{openingDate === reportDates[0] ? "Preparando..." : "Revisar o mais recente"} <Icon name="arrow"/></button></section>
 
-    <section className="panel glass reports-panel"><header className="panel-header"><div><span className="overline">HISTÓRICO</span><h3>Relatórios diários da obra</h3></div><div className="search-box"><Icon name="search"/><input placeholder="Buscar relatório..."/></div></header><div className="report-table"><div className="report-row report-head"><span>RELATÓRIO</span><span>CONTEÚDO</span><span>STATUS</span><span/></div>{reportDates.map((date, index) => { const daily = entries.filter((entry) => entry.date === date); const photoCount = daily.reduce((sum, entry) => sum + entry.photos.length, 0); return <button className="report-row" disabled={openingDate !== null} key={date} onClick={() => void openReport(date)}><span><i className="pdf-icon"><Icon name="report"/></i><span><strong>Status diário · {longDate(date)}</strong><small>{openingDate === date ? "Preparando..." : `SR-${String(reportDates.length - index).padStart(4, "0")}`}</small></span></span><span><small>{daily.length} atualizações</small><small>{photoCount} fotos</small></span><span><StatusBadge value="Em revisão"/></span><span><Icon name="more"/></span></button>; })}</div></section>
+    <section className="panel glass reports-panel"><header className="panel-header"><div><span className="overline">HISTÓRICO</span><h3>Relatórios diários da obra</h3></div><div className="search-box"><Icon name="search"/><input placeholder="Buscar relatório..."/></div></header><div className="report-table"><div className="report-row report-head"><span>RELATÓRIO</span><span>CONTEÚDO</span><span>STATUS</span><span/></div>{reportDates.map((date, index) => { const daily = entries.filter((entry) => entry.date === date); const photoCount = daily.reduce((sum, entry) => sum + entry.photos.length, 0); return <button className="report-row" disabled={openingDate !== null} key={date} onClick={() => void openReport(date)}><span><i className="pdf-icon"><Icon name="report"/></i><span><strong>Status diário · {longDate(date)}</strong><small>{openingDate === date ? "Preparando..." : `SR-${String(reportDates.length - index).padStart(4, "0")}`}</small></span></span><span><small>{daily.length} atualizações</small><small>{photoCount} fotos</small></span><span><StatusBadge value={statusLabel(date)}/></span><span><Icon name="more"/></span></button>; })}</div></section>
 
     {selectedDate && <Modal title="Prévia do status report" subtitle={`${longDate(selectedDate)} · ${reportEntries.length} registros de campo`} onClose={() => setSelectedDate(null)} wide><div className="report-preview"><div className="report-paper">
       <header><div className="report-logo"><img src="/emdia.svg" alt=""/><strong>em dia <span>BY EVERLENZ</span></strong></div><small>STATUS REPORT · {selectedDate.split("-").reverse().join("/")}</small></header>
@@ -44,6 +65,6 @@ export function Reports({ project, tasks, entries, metrics, navigate, ensureRepo
       {photos.length > 0 && <section><h3>Registro fotográfico</h3><div className="preview-photos">{photos.map(({ photo, entry }, index) => <article key={`${entry.id}-${index}`}><img src={photo} alt={`${entry.title} · evidência ${index + 1}`}/><div><strong>{entry.title}</strong><p>{entry.description}</p><span>Evidência {index + 1} · +{entry.progressAdded}% medido</span></div></article>)}</div></section>}
       <section className="report-gantt-section"><h3>Cronograma geral e evolução da obra</h3><div className="report-gantt"><div className="report-gantt-head"><span>EAP · ATIVIDADE</span><span>PERÍODO</span><span>RESPONSÁVEL</span><span>AVANÇO</span></div>{tasks.map((task) => <div className="report-gantt-row" key={task.id}><span><i style={{ background: task.color }}/><b>{task.code}</b> {task.name}</span><span>{task.plannedStart.split("-").reverse().slice(0, 2).join("/")} – {task.plannedEnd.split("-").reverse().slice(0, 2).join("/")}</span><span>{task.responsible || "—"}</span><span><i><b style={{ width: `${task.progress}%`, background: task.color }}/></i><strong>{task.progress}%</strong></span></div>)}</div></section>
       <footer>Gerado por Em Dia · by Everlenz · Informação técnica com evidência de campo</footer>
-    </div><div className="preview-actions"><button className="secondary-btn" onClick={() => window.print()}><Icon name="download"/> Exportar PDF</button><button className="primary-btn" onClick={() => { setSelectedDate(null); setToast("Relatório aprovado e pronto para compartilhamento."); }}><Icon name="share"/> Aprovar relatório</button></div></div></Modal>}
+    </div><div className="preview-actions"><button className="secondary-btn" onClick={() => window.print()}><Icon name="download"/> Exportar PDF</button><button className="primary-btn" disabled={approving || selectedStatus === "approved"} onClick={() => void handleApprove()}><Icon name="share"/> {selectedStatus === "approved" ? "Relatório aprovado" : approving ? "Aprovando..." : "Aprovar relatório"}</button></div></div></Modal>}
   </div>;
 }

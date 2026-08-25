@@ -79,4 +79,11 @@ export type ProjectWorkspace = {
   tasks: Task[];
   entries: JournalEntry[];
   members: Member[];
+  reports?: ReportSummary[];
+};
+
+export type ReportSummary = {
+  id: string;
+  date: string;
+  status: "draft" | "review" | "approved" | "sent";
 };

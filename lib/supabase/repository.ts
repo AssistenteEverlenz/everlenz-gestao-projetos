@@ -61,16 +61,18 @@ export async function loadWorkspaces(userEmail: string) {
   if (projectError) throw projectError;
 
   const workspaces = await Promise.all((projectRows ?? []).map(async (row) => {
-    const [{ data: taskRows, error: taskError }, { data: feedRows, error: feedError }, { data: membershipRows, error: membershipError }, { data: invitationRows, error: invitationError }] = await Promise.all([
+    const [{ data: taskRows, error: taskError }, { data: feedRows, error: feedError }, { data: membershipRows, error: membershipError }, { data: invitationRows, error: invitationError }, { data: reportRows, error: reportError }] = await Promise.all([
       supabase.from("project_gantt").select("*").eq("project_id", row.id).order("sort_order"),
       supabase.from("daily_report_feed").select("*").eq("project_id", row.id).order("created_at", { ascending: false }),
       supabase.from("project_members").select("user_id,role,profiles!project_members_user_id_fkey(full_name,avatar_url)").eq("project_id", row.id),
       supabase.from("project_invitations").select("id,email,role").eq("project_id", row.id).is("accepted_at", null),
+      supabase.from("status_reports").select("id,report_date,status").eq("project_id", row.id),
     ]);
     if (taskError) throw taskError;
     if (feedError) throw feedError;
     if (membershipError) throw membershipError;
     if (invitationError) throw invitationError;
+    if (reportError) throw reportError;
 
     const tasks: Task[] = [];
     for (const item of taskRows ?? []) {
@@ -165,6 +167,7 @@ export async function loadWorkspaces(userEmail: string) {
       tasks,
       entries,
       members,
+      reports: (reportRows ?? []).map((report) => ({ id: report.id, date: report.report_date, status: report.status })),
     } satisfies ProjectWorkspace;
   }));
   return { profile, workspaces };
@@ -187,6 +190,17 @@ export async function ensureRemoteStatusReport(projectId: string, reportDate: st
   });
   if (error) throw error;
   return data as string;
+}
+
+export async function approveRemoteStatusReport(projectId: string, reportDate: string) {
+  const supabase = getSupabaseBrowserClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const { error } = await supabase.from("status_reports").update({
+    status: "approved",
+    approved_by: userData.user?.id ?? null,
+    approved_at: new Date().toISOString(),
+  }).eq("project_id", projectId).eq("report_date", reportDate).select("id").single();
+  if (error) throw error;
 }
 
 export async function createRemoteProject(project: Project) {

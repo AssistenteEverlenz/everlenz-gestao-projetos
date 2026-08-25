@@ -15,7 +15,7 @@ import { Reports } from "./views/reports";
 import { Team } from "./views/team";
 import { Settings } from "./views/settings";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { createRemoteProject, createRemoteTask, ensureRemoteStatusReport, getProfile, inviteRemoteMember, loadAvailableWorkspaces, recordRemoteEntry, updateRemoteEntry, updateRemoteTask, updateRemoteTaskProgress } from "@/lib/supabase/repository";
+import { approveRemoteStatusReport, createRemoteProject, createRemoteTask, ensureRemoteStatusReport, getProfile, inviteRemoteMember, loadAvailableWorkspaces, recordRemoteEntry, updateRemoteEntry, updateRemoteTask, updateRemoteTaskProgress } from "@/lib/supabase/repository";
 
 const nav: Array<{ id: ViewId; label: string; short: string; icon: IconName }> = [
   { id: "overview", label: "Visão geral", short: "Início", icon: "home" },
@@ -74,7 +74,8 @@ export function Workspace() {
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const savedTheme = window.localStorage.getItem("emdia-theme");
-      setDark(savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
+      const manualTheme = window.localStorage.getItem("emdia-theme-manual") === "true";
+      setDark(manualTheme && savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
       const saved = remoteMode ? null : window.localStorage.getItem(storageKey);
       if (saved && !remoteMode) {
         try {
@@ -126,9 +127,15 @@ export function Workspace() {
   }, [authReady, authUser, reloadToken, remoteMode]);
 
   useEffect(() => {
+    if (!hydrated) return;
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    window.localStorage.setItem("emdia-theme", dark ? "dark" : "light");
-  }, [dark]);
+  }, [dark, hydrated]);
+
+  function chooseTheme(value: boolean) {
+    window.localStorage.setItem("emdia-theme", value ? "dark" : "light");
+    window.localStorage.setItem("emdia-theme-manual", "true");
+    setDark(value);
+  }
 
   useEffect(() => {
     if (!hydrated || remoteMode) return;
@@ -238,8 +245,16 @@ export function Workspace() {
   }
 
   async function ensureReport(reportDate: string) {
-    if (!workspace || !remoteMode) return;
-    await ensureRemoteStatusReport(workspace.project.id, reportDate);
+    if (!workspace) return;
+    const id = remoteMode ? await ensureRemoteStatusReport(workspace.project.id, reportDate) : crypto.randomUUID();
+    updateCurrent((current) => current.reports?.some((report) => report.date === reportDate) ? current : { ...current, reports: [...(current.reports ?? []), { id, date: reportDate, status: "draft" }] });
+  }
+
+  async function approveReport(reportDate: string) {
+    if (!workspace) return;
+    if (remoteMode) await approveRemoteStatusReport(workspace.project.id, reportDate);
+    updateCurrent((current) => ({ ...current, reports: (current.reports ?? []).map((report) => report.date === reportDate ? { ...report, status: "approved" as const } : report) }));
+    setToast("Relatório aprovado e pronto para compartilhamento.");
   }
 
   async function createProject(project: Project) {
@@ -275,7 +290,7 @@ export function Workspace() {
     }, 400);
   }
 
-  const common = workspace ? { project: workspace.project, tasks: workspace.tasks, entries: workspace.entries, members: workspace.members, navigate, metrics } : null;
+  const common = workspace ? { project: workspace.project, tasks: workspace.tasks, entries: workspace.entries, members: workspace.members, reports: workspace.reports ?? [], navigate, metrics } : null;
 
   if (remoteMode && !authReady) return <LoadingScreen />;
   if (remoteMode && !authUser) return <AuthScreen />;
@@ -318,7 +333,7 @@ export function Workspace() {
           <div className="header-copy"><small>{workspace ? meta.eyebrow : "NOVO AMBIENTE DE PROJETOS"}</small><h1>{workspace ? meta.title : "Vamos colocar sua obra em dia"}</h1><p>{workspace ? meta.description : "Crie o primeiro projeto para montar o cronograma, registrar o campo e gerar relatórios."}</p></div>
           <div className="header-actions">
             <div className="sync-state"><span /> {remoteMode ? "Supabase sincronizado" : "Modo local"}</div>
-            <button className="icon-btn" onClick={() => setDark((value) => !value)} aria-label="Alternar tema"><Icon name={dark ? "sun" : "moon"} /></button>
+            <button className="icon-btn" onClick={() => chooseTheme(!dark)} aria-label="Alternar tema"><Icon name={dark ? "sun" : "moon"} /></button>
             <button className="icon-btn notification" aria-label="Notificações"><Icon name="bell" /></button>
             <button className="avatar avatar-dark desktop-avatar" onClick={() => remoteMode && getSupabaseBrowserClient().auth.signOut()} title={remoteMode ? "Sair" : undefined}>GA</button>
           </div>
@@ -329,9 +344,9 @@ export function Workspace() {
           {workspace && common && view === "overview" && <Overview {...common} />}
           {workspace && common && view === "schedule" && <Schedule {...common} addTask={addTask} editTask={editTask} editEntry={editEntry} updateTaskProgress={updateTaskProgress} setToast={setToast} />}
           {workspace && common && view === "journal" && <Journal {...common} addEntry={addEntry} editEntry={editEntry} />}
-          {workspace && common && view === "reports" && <Reports {...common} ensureReport={ensureReport} setToast={setToast} />}
+          {workspace && common && view === "reports" && <Reports {...common} ensureReport={ensureReport} approveReport={approveReport} setToast={setToast} />}
           {workspace && common && view === "team" && <Team {...common} inviteMember={inviteMember} setToast={setToast} />}
-          {view === "settings" && <Settings dark={dark} setDark={setDark} setToast={setToast} />}
+          {view === "settings" && <Settings dark={dark} setDark={chooseTheme} setToast={setToast} />}
         </div>
       </main>
 

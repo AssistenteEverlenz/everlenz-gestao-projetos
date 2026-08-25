@@ -11,6 +11,7 @@ const fullDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateSt
 
 export function EntryHistoryModal({ task, entries, onClose, onUpdate }: { task: Task; entries: JournalEntry[]; onClose: () => void; onUpdate: (entry: JournalEntry) => Promise<void> }) {
   const [editing, setEditing] = useState<JournalEntry | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; label: string } | null>(null);
   const ordered = [...entries].sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
   return <Modal title={task.name} subtitle={`${task.code} · ${ordered.length} registro${ordered.length === 1 ? "" : "s"} no Diário de Obra`} onClose={onClose} wide>
     {editing ? <EntryEditForm task={task} entry={editing} onCancel={() => setEditing(null)} onSave={async (entry) => { await onUpdate(entry); setEditing(null); }} /> : <div className="entry-history">
@@ -19,9 +20,10 @@ export function EntryHistoryModal({ task, entries, onClose, onUpdate }: { task: 
         <header><div><span>{fullDate(entry.date)} · {entry.time}</span><h3>{entry.title}</h3><small>{entry.author} · {entry.weather} · {entry.crew} pessoa{entry.crew === 1 ? "" : "s"}</small></div><button className="secondary-btn compact" onClick={() => setEditing(entry)}><Icon name="settings"/> Editar</button></header>
         <p>{entry.description}</p>
         <div className="history-progress"><span><small>ANTES</small><b>{entry.progressBefore}%</b></span><Icon name="arrow"/><span className="daily"><small>MEDIDO</small><b>+{entry.progressAdded}%</b></span><Icon name="arrow"/><span><small>DEPOIS</small><b>{entry.progressAfter}%</b></span></div>
-        {entry.photos.length > 0 && <div className="history-photos">{entry.photos.map((photo, index) => <a href={photo.url} target="_blank" rel="noreferrer" key={photo.id ?? `${entry.id}-${index}`}><img src={photo.url} alt={`${entry.title} · foto ${index + 1}`}/><span>Foto {index + 1}</span></a>)}</div>}
+        {entry.photos.length > 0 && <div className="history-photos">{entry.photos.map((photo, index) => <button type="button" key={photo.id ?? `${entry.id}-${index}`} onClick={() => setPreviewPhoto({ url: photo.url, label: `${entry.title} · Foto ${index + 1}` })}><img src={photo.url} alt={`${entry.title} · foto ${index + 1}`}/><span>Foto {index + 1}</span></button>)}</div>}
       </article>)}
     </div>}
+    {previewPhoto && <div className="photo-lightbox" role="dialog" aria-modal="true" aria-label={previewPhoto.label} onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewPhoto(null); }}><header><strong>{previewPhoto.label}</strong><button className="icon-btn" onClick={() => setPreviewPhoto(null)} aria-label="Fechar foto"><Icon name="close"/></button></header><img src={previewPhoto.url} alt={previewPhoto.label}/></div>}
   </Modal>;
 }
 

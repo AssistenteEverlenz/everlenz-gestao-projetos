@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { EntryHistoryModal } from "../entry-history";
 import { Icon } from "../icons";
 import type { DependencyType, JournalEntry, Member, Project, Task, ViewId } from "../types";
@@ -23,7 +24,9 @@ export function Schedule({ project, tasks, entries, members, metrics, addTask, e
   const [zoom, setZoom] = useState<"Dias" | "Semanas">("Semanas");
   const [showBaseline, setShowBaseline] = useState(true);
   const [filterCritical, setFilterCritical] = useState(false);
-  const visible = useMemo(() => filterCritical ? tasks.filter((task) => task.critical) : tasks, [filterCritical, tasks]);
+  const [hideCompleted, setHideCompleted] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "done" | "waiting">("all");
+  const visible = useMemo(() => tasks.filter((task) => !filterCritical || task.critical).filter((task) => !hideCompleted || statusFilter === "done" || task.progress < 100).filter((task) => statusFilter === "all" || statusFilter === "active" && task.progress > 0 && task.progress < 100 || statusFilter === "done" && task.progress === 100 || statusFilter === "waiting" && task.progress === 0), [filterCritical, hideCompleted, statusFilter, tasks]);
   const projectDays = Math.max(1, daysBetween(project.start, project.end) + 1);
   const planned = useMemo(() => {
     const measurable = tasks.filter((task) => !tasks.some((child) => child.parentId === task.id));
@@ -47,6 +50,7 @@ export function Schedule({ project, tasks, entries, members, metrics, addTask, e
     if (!startValue || !endValue) return { display: "none" };
     return { left: `${Math.min(99, daysBetween(project.start, startValue) / projectDays * 100)}%`, width: `${Math.max(0.8, (daysBetween(startValue, endValue) + 1) / projectDays * 100)}%` };
   }
+  function taskDepth(task: Task) { let depth = 0; let parentId = task.parentId; while (parentId && depth < 6) { depth += 1; parentId = tasks.find((item) => item.id === parentId)?.parentId; } return depth; }
 
   if (!tasks.length) return <div className="view-stack schedule-view"><section className="empty-schedule glass"><span className="empty-workspace-icon"><Icon name="gantt" /></span><span className="overline">CRONOGRAMA EM BRANCO</span><h2>Monte a estrutura da obra</h2><p>Comece pelas etapas principais e depois adicione subitens, responsáveis, datas, dependências e pesos. O Diário de Obra será liberado assim que houver uma atividade executável.</p><div className="gantt-feature-grid"><span><Icon name="calendar"/><b>Datas e linha de base</b></span><span><Icon name="team"/><b>Responsáveis</b></span><span><Icon name="trend"/><b>Pesos e progresso</b></span><span><Icon name="gantt"/><b>Pais e dependências</b></span></div><button className="primary-btn" onClick={() => setCreating(true)}><Icon name="plus"/> Criar primeira atividade</button></section>{creating && <TaskForm project={project} tasks={tasks} members={members} onClose={() => setCreating(false)} onSave={(task) => { addTask(task); setCreating(false); }} />}</div>;
 
@@ -55,6 +59,7 @@ export function Schedule({ project, tasks, entries, members, metrics, addTask, e
       <div className="toolbar-group"><button className="primary-btn compact" onClick={() => setCreating(true)}><Icon name="plus"/> Nova atividade</button><button className="secondary-btn compact"><Icon name="filter"/> Filtros</button></div>
       <div className="toolbar-group center"><button className={filterCritical ? "toggle-chip active" : "toggle-chip"} onClick={() => setFilterCritical((value) => !value)}><span className="critical-dot"/> Caminho crítico</button><label className="switch-label"><input type="checkbox" checked={showBaseline} onChange={(event) => setShowBaseline(event.target.checked)}/><span/> Linha de base</label></div>
       <div className="segmented"><button className={zoom === "Dias" ? "active" : ""} onClick={() => setZoom("Dias")}>Dias</button><button className={zoom === "Semanas" ? "active" : ""} onClick={() => setZoom("Semanas")}>Semanas</button></div>
+      <div className="gantt-quick-filters"><button className={statusFilter === "all" ? "active" : ""} onClick={() => setStatusFilter("all")}>Todas <b>{tasks.length}</b></button><button className={statusFilter === "active" ? "active" : ""} onClick={() => setStatusFilter("active")}>Em andamento <b>{tasks.filter((task) => task.progress > 0 && task.progress < 100).length}</b></button><button className={statusFilter === "waiting" ? "active" : ""} onClick={() => setStatusFilter("waiting")}>Aguardando <b>{tasks.filter((task) => task.progress === 0).length}</b></button><button className={statusFilter === "done" ? "active" : ""} onClick={() => setStatusFilter("done")}>Concluídas <b>{tasks.filter((task) => task.progress === 100).length}</b></button><label className="switch-label hide-completed"><input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)}/><span/> Ocultar concluídas</label></div>
     </section>
 
     <section className="gantt-shell glass">
@@ -64,7 +69,7 @@ export function Schedule({ project, tasks, entries, members, metrics, addTask, e
           <div className="task-table-head"><span>EAP</span><span>ATIVIDADE</span><span>DURAÇÃO</span><span>%</span></div>
           <div className="timeline-head">{timelineLabels.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}</div>
           {visible.map((task) => <div className={`gantt-row ${task.critical ? "critical" : ""}`} key={task.id}>
-            <button className="task-row" onClick={() => setSelected(task)}><span>{task.code}</span><span style={{ paddingLeft: task.parentId ? 12 : 0 }}><strong>{task.name}</strong><small>{task.responsible || "Sem responsável"}</small></span><span>{task.milestone ? "Marco" : `${duration(task)}d`}</span><span><b>{task.progress}%</b></span></button>
+            <button className="task-row" onClick={() => setSelected(task)}><span>{task.code}</span><span style={{ paddingLeft: taskDepth(task) * 12 }}><strong>{task.name}</strong><small>{task.responsible || "Sem responsável"}{entries.filter((entry) => entry.taskId === task.id).length > 0 && <em className="task-journal-count"><Icon name="journal"/> {entries.filter((entry) => entry.taskId === task.id).length}</em>}</small></span><span>{task.milestone ? "Marco" : `${duration(task)}d`}</span><span><b>{task.progress}%</b></span></button>
             <button className="timeline-row" onClick={() => setSelected(task)} aria-label={`Editar ${task.name}`}>
               <div className="day-lines">{Array.from({ length: 16 }, (_, day) => <i key={day}/>)}</div>
               {showBaseline && <span className="baseline-bar" style={barStyle(task, true)}/>}
@@ -73,7 +78,7 @@ export function Schedule({ project, tasks, entries, members, metrics, addTask, e
           </div>)}
         </div>
       </div>
-      <div className="gantt-mobile-list">{visible.map((task) => <button key={task.id} className="gantt-mobile-card" onClick={() => setSelected(task)}><span className="mobile-task-color" style={{ background: task.color }}/><div><small>{task.code} · {task.phase}</small><strong>{task.name}</strong><span><Icon name="calendar"/>{formatDate(task.plannedStart)} → {formatDate(task.plannedEnd)}</span><span><Icon name="team"/>{task.responsible || "Sem responsável"}</span><div className="thin-progress"><i style={{ width: `${task.progress}%`, background: task.color }}/></div></div><b>{task.progress}%</b></button>)}</div>
+      <div className="gantt-mobile-list">{visible.map((task) => { const depth = taskDepth(task); const journalCount = entries.filter((entry) => entry.taskId === task.id).length; const childCount = tasks.filter((item) => item.parentId === task.id).length; return <button key={task.id} className={`gantt-mobile-card ${depth ? "is-child" : ""} ${childCount ? "is-parent" : ""}`} style={{ "--task-depth": depth } as CSSProperties} onClick={() => setSelected(task)}><span className="mobile-task-color" style={{ background: task.color }}/><div><small>{task.code} · {task.phase}{childCount > 0 && ` · ${childCount} subitem${childCount > 1 ? "s" : ""}`}</small><strong>{task.name}</strong><span><Icon name="calendar"/>{formatDate(task.plannedStart)} → {formatDate(task.plannedEnd)}</span><span><Icon name="team"/>{task.responsible || "Sem responsável"}{journalCount > 0 && <em className="mobile-journal-count"><Icon name="journal"/>{journalCount}</em>}</span><div className="thin-progress"><i style={{ width: `${task.progress}%`, background: task.color }}/></div></div><b>{task.progress}%</b></button>; })}</div>
       <footer className="gantt-legend"><span><i className="legend-plan"/> Planejado</span><span><i className="legend-done"/> Realizado</span><span><i className="legend-base"/> Linha de base</span><span><i className="legend-critical"/> Caminho crítico</span></footer>
     </section>
 
