@@ -6,16 +6,22 @@ Domínio da versão de teste: `emdia.everlenz.com.br`.
 
 ## O que já funciona
 
+- criação de projetos a partir de um ambiente vazio;
 - painel responsivo com mini indicadores expansíveis no mobile;
-- Gantt com EAP, linha de base, caminho crítico e edição do avanço;
-- diário de obra com vínculo à atividade, descrição, efetivo e upload de foto;
-- atualização da porcentagem da atividade ao salvar o registro;
-- prévia diagramada do status report e impressão em PDF pelo navegador;
+- Gantt com EAP, itens pai, quatro tipos de dependência, espera, datas, linha de
+  base, responsáveis, pesos, cores, marcos e caminho crítico;
+- diário mobile-first com múltiplas fotos, vínculo obrigatório à atividade,
+  descrição, efetivo, clima e medição do percentual executado no dia;
+- atualização rastreável da atividade e dos itens pai ao salvar o diário;
+- status report diário com todos os lançamentos, fotos, medições e Gantt completo;
 - equipe com papéis e convite simulado;
 - temas claro e escuro com visual liquid glass;
-- estrutura inicial de banco Supabase com RLS multiusuário.
+- menu lateral que recolhe após 400 ms e expande ao receber o cursor;
+- migrations Supabase com transação de medição, RLS multiusuário e Storage privado.
 
-Os dados exibidos nesta primeira entrega são demonstrativos e ficam em memória durante a sessão. O esquema pronto para a integração está em `supabase/schema.sql`.
+Sem as variáveis do Supabase, a versão de teste usa persistência local no
+navegador. Depois da configuração, a mesma interface será alimentada pelo banco.
+As migrations estão em `supabase/queries`.
 
 ## Desenvolvimento
 
@@ -48,4 +54,5 @@ O `Dockerfile` usa a saída standalone do Next.js e executa como usuário sem pr
 
 - [Pesquisa de mercado](docs/market-research.md)
 - [Publicação no Coolify](docs/coolify.md)
-- [Modelo inicial do Supabase](supabase/schema.sql)
+- [Configuração do Supabase](docs/supabase.md)
+- [Migrations e funções do banco](supabase/queries/README.md)

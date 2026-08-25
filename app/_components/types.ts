@@ -8,23 +8,33 @@ export type Project = {
   start: string;
   end: string;
   progress: number;
-  status: "No prazo" | "Atenção" | "Atrasada";
+  status: "Planejamento" | "No prazo" | "Atenção" | "Atrasada" | "Concluída";
+  description?: string;
+  contractNumber?: string;
 };
+
+export type DependencyType = "FS" | "SS" | "FF" | "SF";
 
 export type Task = {
   id: number;
   code: string;
   name: string;
   phase: string;
-  start: number;
-  duration: number;
+  plannedStart: string;
+  plannedEnd: string;
   progress: number;
-  baselineStart: number;
-  baselineDuration: number;
-  dependency?: string;
+  weight: number;
+  baselineStart?: string;
+  baselineEnd?: string;
+  parentId?: number;
+  dependencyId?: number;
+  dependencyType?: DependencyType;
+  lagDays?: number;
   responsible: string;
+  color: string;
   critical?: boolean;
   milestone?: boolean;
+  notes?: string;
 };
 
 export type JournalEntry = {
@@ -34,19 +44,28 @@ export type JournalEntry = {
   taskId: number;
   title: string;
   description: string;
+  progressBefore: number;
   progressAdded: number;
+  progressAfter: number;
   author: string;
   weather: string;
   crew: number;
-  image: string;
+  photos: string[];
 };
 
 export type Member = {
   id: string;
   name: string;
   email: string;
-  role: "Administrador" | "Engenheiro" | "Encarregado" | "Cliente";
+  role: "Administrador" | "Gestor" | "Engenheiro" | "Encarregado" | "Cliente";
   initials: string;
   color: string;
   online: boolean;
+};
+
+export type ProjectWorkspace = {
+  project: Project;
+  tasks: Task[];
+  entries: JournalEntry[];
+  members: Member[];
 };
