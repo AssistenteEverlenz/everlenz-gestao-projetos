@@ -14,7 +14,7 @@ export function Reports({ project, tasks, entries, metrics, navigate, ensureRepo
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [openingDate, setOpeningDate] = useState<string | null>(null);
   const reportEntries = entries.filter((entry) => entry.date === selectedDate);
-  const photos = reportEntries.flatMap((entry) => entry.photos.map((photo) => ({ photo, entry })));
+  const photos = reportEntries.flatMap((entry) => entry.photos.map((photo) => ({ photo: photo.url, entry })));
 
   async function openReport(date: string) {
     setOpeningDate(date);

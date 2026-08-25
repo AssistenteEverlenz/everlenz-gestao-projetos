@@ -15,7 +15,7 @@ import { Reports } from "./views/reports";
 import { Team } from "./views/team";
 import { Settings } from "./views/settings";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { createRemoteProject, createRemoteTask, ensureRemoteStatusReport, getProfile, inviteRemoteMember, loadAvailableWorkspaces, recordRemoteEntry, updateRemoteTaskProgress } from "@/lib/supabase/repository";
+import { createRemoteProject, createRemoteTask, ensureRemoteStatusReport, getProfile, inviteRemoteMember, loadAvailableWorkspaces, recordRemoteEntry, updateRemoteEntry, updateRemoteTask, updateRemoteTaskProgress } from "@/lib/supabase/repository";
 
 const nav: Array<{ id: ViewId; label: string; short: string; icon: IconName }> = [
   { id: "overview", label: "Visão geral", short: "Início", icon: "home" },
@@ -182,6 +182,13 @@ export function Workspace() {
     setToast("Atividade adicionada ao cronograma.");
   }
 
+  async function editTask(task: Task) {
+    if (!workspace) return;
+    if (remoteMode) await updateRemoteTask(workspace.project.id, task, workspace.members);
+    updateCurrent((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === task.id ? task : item) }));
+    setToast("Atividade atualizada no cronograma.");
+  }
+
   function addEntry(entry: JournalEntry) {
     if (!workspace) return;
     const applyEntry = () => updateCurrent((current) => ({
@@ -199,6 +206,24 @@ export function Workspace() {
     }
     applyEntry();
     setToast("Registro salvo, evidências vinculadas e cronograma atualizado.");
+  }
+
+  async function editEntry(entry: JournalEntry) {
+    if (!workspace) return;
+    if (remoteMode) {
+      await updateRemoteEntry(workspace, entry);
+      setRemoteLoading(true);
+      setReloadToken((value) => value + 1);
+    } else {
+      const previous = workspace.entries.find((item) => item.id === entry.id);
+      const difference = entry.progressAdded - (previous?.progressAdded ?? 0);
+      updateCurrent((current) => ({
+        ...current,
+        entries: current.entries.map((item) => item.id === entry.id ? entry : item),
+        tasks: withRecalculatedProgress(current.tasks, entry.taskId, (current.tasks.find((item) => item.id === entry.taskId)?.progress ?? 0) + difference),
+      }));
+    }
+    setToast("Diário de obra atualizado e avanço recalculado.");
   }
 
   function setMembers(value: React.SetStateAction<Member[]>) {
@@ -302,8 +327,8 @@ export function Workspace() {
         <div className="content-area">
           {!workspace && <EmptyWorkspace onCreate={() => setProjectModal(true)} />}
           {workspace && common && view === "overview" && <Overview {...common} />}
-          {workspace && common && view === "schedule" && <Schedule {...common} addTask={addTask} updateTaskProgress={updateTaskProgress} setToast={setToast} />}
-          {workspace && common && view === "journal" && <Journal {...common} addEntry={addEntry} />}
+          {workspace && common && view === "schedule" && <Schedule {...common} addTask={addTask} editTask={editTask} editEntry={editEntry} updateTaskProgress={updateTaskProgress} setToast={setToast} />}
+          {workspace && common && view === "journal" && <Journal {...common} addEntry={addEntry} editEntry={editEntry} />}
           {workspace && common && view === "reports" && <Reports {...common} ensureReport={ensureReport} setToast={setToast} />}
           {workspace && common && view === "team" && <Team {...common} inviteMember={inviteMember} setToast={setToast} />}
           {view === "settings" && <Settings dark={dark} setDark={setDark} setToast={setToast} />}

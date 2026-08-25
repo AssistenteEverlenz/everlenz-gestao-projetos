@@ -1,4 +1,4 @@
-import type { JournalEntry, Member, Project, ProjectWorkspace, Task } from "@/app/_components/types";
+import type { JournalEntry, JournalPhoto, Member, Project, ProjectWorkspace, Task } from "@/app/_components/types";
 import { getSupabaseBrowserClient } from "./client";
 import { uploadWorksitePhotos } from "./storage";
 
@@ -117,7 +117,11 @@ export async function loadWorkspaces(userEmail: string) {
       author: item.author_name,
       weather: item.weather ?? "Não informado",
       crew: item.crew_count,
-      photos: (item.photos ?? []).map((photo: { storage_path: string }) => signedByPath.get(photo.storage_path)).filter(Boolean) as string[],
+      photos: (item.photos ?? []).map((photo: { id: string; storage_path: string }) => ({
+        id: photo.id,
+        url: signedByPath.get(photo.storage_path) ?? "",
+        storagePath: photo.storage_path,
+      })).filter((photo: JournalPhoto) => Boolean(photo.url)),
     }));
     const members: Member[] = (membershipRows ?? []).map((membership) => {
       const related = Array.isArray(membership.profiles) ? membership.profiles[0] : membership.profiles;
@@ -234,20 +238,54 @@ export async function createRemoteTask(projectId: string, task: Task, members: M
   }
 }
 
+export async function updateRemoteTask(projectId: string, task: Task, members: Member[]) {
+  const supabase = getSupabaseBrowserClient();
+  const responsibleId = members.find((member) => member.name === task.responsible && !member.pending)?.id ?? null;
+  const { error } = await supabase.from("tasks").update({
+    parent_id: task.parentId ?? null,
+    wbs: task.code,
+    name: task.name,
+    phase: task.phase,
+    notes: task.notes ?? null,
+    planned_start: task.plannedStart,
+    planned_end: task.plannedEnd,
+    baseline_start: task.baselineStart ?? null,
+    baseline_end: task.baselineEnd ?? null,
+    weight: task.weight,
+    responsible_id: responsibleId,
+    color: task.color,
+    is_milestone: Boolean(task.milestone),
+    is_critical: Boolean(task.critical),
+  }).eq("id", task.id).eq("project_id", projectId);
+  if (error) throw error;
+
+  const { error: removeDependencyError } = await supabase.from("task_dependencies").delete().eq("successor_id", task.id);
+  if (removeDependencyError) throw removeDependencyError;
+  if (task.dependencyId) {
+    const { error: dependencyError } = await supabase.from("task_dependencies").insert({
+      predecessor_id: task.dependencyId,
+      successor_id: task.id,
+      dependency_type: task.dependencyType ?? "FS",
+      lag_days: task.lagDays ?? 0,
+    });
+    if (dependencyError) throw dependencyError;
+  }
+}
+
 export async function updateRemoteTaskProgress(taskId: string, progress: number) {
   const { error } = await getSupabaseBrowserClient().from("tasks").update({ progress }).eq("id", taskId);
   if (error) throw error;
 }
 
-async function dataUrlToFile(value: string, index: number) {
-  const response = await fetch(value);
+async function photoToFile(photo: JournalPhoto, index: number) {
+  const response = await fetch(photo.url);
   const blob = await response.blob();
-  return new File([blob], "evidencia-" + (index + 1) + ".jpg", { type: blob.type || "image/jpeg" });
+  return new File([blob], photo.originalName ?? `evidencia-${index + 1}.jpg`, { type: photo.mimeType || blob.type || "image/jpeg" });
 }
 
 export async function recordRemoteEntry(workspace: ProjectWorkspace, entry: JournalEntry) {
   if (!workspace.organizationId) throw new Error("Organização não identificada.");
-  const files = await Promise.all(entry.photos.map(dataUrlToFile));
+  const files = await Promise.all(entry.photos.map(photoToFile));
   const uploadId = crypto.randomUUID();
   const uploaded = await uploadWorksitePhotos(workspace.organizationId, workspace.project.id, entry.date, uploadId, files);
   const supabase = getSupabaseBrowserClient();
@@ -266,4 +304,30 @@ export async function recordRemoteEntry(workspace: ProjectWorkspace, entry: Jour
     await supabase.storage.from("worksite-photos").remove(uploaded.map((item) => item.storage_path));
     throw error;
   }
+}
+
+export async function updateRemoteEntry(workspace: ProjectWorkspace, entry: JournalEntry) {
+  if (!workspace.organizationId) throw new Error("Organização não identificada.");
+  const existing = entry.photos.filter((photo) => photo.id && photo.storagePath);
+  const additions = entry.photos.filter((photo) => !photo.id);
+  const files = await Promise.all(additions.map(photoToFile));
+  const uploadId = crypto.randomUUID();
+  const uploaded = await uploadWorksitePhotos(workspace.organizationId, workspace.project.id, entry.date, uploadId, files);
+  const supabase = getSupabaseBrowserClient();
+  const { data, error } = await supabase.rpc("update_daily_progress", {
+    p_update_id: entry.id,
+    p_title: entry.title,
+    p_description: entry.description,
+    p_progress_delta: entry.progressAdded,
+    p_crew_count: entry.crew,
+    p_weather: entry.weather,
+    p_keep_photo_ids: existing.map((photo) => photo.id),
+    p_new_photos: uploaded,
+  });
+  if (error) {
+    if (uploaded.length) await supabase.storage.from("worksite-photos").remove(uploaded.map((item) => item.storage_path));
+    throw error;
+  }
+  const deletedPaths = ((data as { deleted_paths?: string[] } | null)?.deleted_paths ?? []);
+  if (deletedPaths.length) await supabase.storage.from("worksite-photos").remove(deletedPaths);
 }

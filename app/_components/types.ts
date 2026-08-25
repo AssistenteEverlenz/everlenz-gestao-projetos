@@ -50,7 +50,16 @@ export type JournalEntry = {
   author: string;
   weather: string;
   crew: number;
-  photos: string[];
+  photos: JournalPhoto[];
+};
+
+export type JournalPhoto = {
+  id?: string;
+  url: string;
+  storagePath?: string;
+  originalName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
 };
 
 export type Member = {
