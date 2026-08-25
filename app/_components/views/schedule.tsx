@@ -583,18 +583,26 @@ export function Schedule({
                 const targetY = targetIndex * 56 + 28;
                 const sourceUsesFinish = relation === "FS" || relation === "FF";
                 const targetUsesFinish = relation === "FF" || relation === "SF";
+                const rowDirection = targetY >= sourceY ? 1 : -1;
+                const laneOffset = (targetIndex % 4) * 5;
                 const sourceExitX = Math.max(
                   5,
-                  Math.min(995, sourceX + (sourceUsesFinish ? 12 : -12)),
+                  Math.min(
+                    995,
+                    sourceUsesFinish
+                      ? Math.max(sourceX, targetX) + 18 + laneOffset
+                      : Math.min(sourceX, targetX) - 18 - laneOffset,
+                  ),
                 );
                 const targetEntryX = Math.max(
                   5,
-                  Math.min(995, targetX + (targetUsesFinish ? 10 : -10)),
+                  Math.min(995, targetX + (targetUsesFinish ? 12 : -12)),
                 );
+                const approachY = targetY - rowDirection * 13;
                 return (
                   <polyline
                     key={`${predecessor.id}-${task.id}`}
-                    points={`${sourceX},${sourceY} ${sourceExitX},${sourceY} ${sourceExitX},${targetY} ${targetEntryX},${targetY} ${targetX},${targetY}`}
+                    points={`${sourceX},${sourceY} ${sourceExitX},${sourceY} ${sourceExitX},${approachY} ${targetEntryX},${approachY} ${targetEntryX},${targetY} ${targetX},${targetY}`}
                     markerEnd="url(#dependency-arrow)"
                   />
                 );
@@ -635,6 +643,7 @@ export function Schedule({
                     onClick={() => setSelected(task)}
                   >
                     <span className="task-eap-cell">
+                      <b>{task.code}</b>
                       {childCount > 0 && (
                         <span
                           className="tree-toggle"
@@ -652,7 +661,6 @@ export function Schedule({
                           {collapsedIds.has(task.id) ? "›" : "⌄"}
                         </span>
                       )}
-                      <b>{task.code}</b>
                     </span>
                     <span
                       className="task-name-cell"

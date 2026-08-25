@@ -122,6 +122,87 @@ export function Reports({
     }
   }
 
+  const reportDependencyLayer = (suffix: string) => {
+    const markerId = `report-arrow-${suffix}`;
+    const xFor = (value: string, endBoundary = false) =>
+      Math.max(
+        0,
+        Math.min(
+          995,
+          (((dateValue(value) - dateValue(project.start)) / dayMs +
+            (endBoundary ? 1 : 0)) /
+            ganttDays) *
+            1000,
+        ),
+      );
+    return (
+      <svg
+        className="print-dependency-layer"
+        viewBox={`0 0 1000 ${Math.max(27, tasks.length * 27)}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <marker
+            id={markerId}
+            markerWidth="7"
+            markerHeight="7"
+            refX="6"
+            refY="3.5"
+            orient="auto"
+          >
+            <path d="M0,0 L7,3.5 L0,7 Z" />
+          </marker>
+        </defs>
+        {tasks.map((task, targetIndex) => {
+          const sourceIndex = tasks.findIndex(
+            (item) => item.id === task.dependencyId,
+          );
+          if (sourceIndex < 0) return null;
+          const predecessor = tasks[sourceIndex];
+          const relation = task.dependencyType ?? "FS";
+          const sourceUsesFinish = relation === "FS" || relation === "FF";
+          const targetUsesFinish = relation === "FF" || relation === "SF";
+          const sourceX = xFor(
+            sourceUsesFinish
+              ? predecessor.plannedEnd
+              : predecessor.plannedStart,
+            sourceUsesFinish,
+          );
+          const targetX = xFor(
+            targetUsesFinish ? task.plannedEnd : task.plannedStart,
+            targetUsesFinish,
+          );
+          const sourceY = sourceIndex * 27 + 13.5;
+          const targetY = targetIndex * 27 + 13.5;
+          const rowDirection = targetY >= sourceY ? 1 : -1;
+          const laneOffset = (targetIndex % 4) * 5;
+          const sourceExitX = Math.max(
+            5,
+            Math.min(
+              995,
+              sourceUsesFinish
+                ? Math.max(sourceX, targetX) + 18 + laneOffset
+                : Math.min(sourceX, targetX) - 18 - laneOffset,
+            ),
+          );
+          const targetEntryX = Math.max(
+            5,
+            Math.min(995, targetX + (targetUsesFinish ? 12 : -12)),
+          );
+          const approachY = targetY - rowDirection * 7;
+          return (
+            <polyline
+              key={`${predecessor.id}-${task.id}`}
+              points={`${sourceX},${sourceY} ${sourceExitX},${sourceY} ${sourceExitX},${approachY} ${targetEntryX},${approachY} ${targetEntryX},${targetY} ${targetX},${targetY}`}
+              markerEnd={`url(#${markerId})`}
+            />
+          );
+        })}
+      </svg>
+    );
+  };
+
   const ganttPage = (extraClass: string) => (
     <section className={`report-gantt-page ${extraClass}`}>
       <header>
@@ -146,6 +227,7 @@ export function Reports({
             ))}
           </div>
         </div>
+        {reportDependencyLayer(extraClass)}
         {tasks.map((task) => {
           const palette = taskStatusPalette[taskExecutionStatus(task)];
           return (

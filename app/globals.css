@@ -143,7 +143,8 @@ html[data-theme="dark"] .glass { border-color: var(--line); }
 .sidebar-compact .brand span,.sidebar-compact .project-copy,.sidebar-compact .sidebar-project > svg,.sidebar-compact .side-nav button > span,.sidebar-compact .side-nav em,.sidebar-compact .side-footer > button > span,.sidebar-compact .user-card > span:nth-child(2),.sidebar-compact .user-card > svg { display: none; }
 .sidebar-compact .sidebar-project-label { visibility:hidden; }
 .sidebar-compact .sidebar-project { display:flex; width:48px; min-width:48px; max-width:48px; justify-self:center; justify-content:center; padding:8px; }
-.sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { justify-content: center; padding-inline: 10px; }
+.sidebar-compact .side-nav { width:48px; min-width:48px; max-width:48px; justify-self:center; }
+.sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { width:48px; min-width:48px; max-width:48px; justify-content:center; padding:0; }
 .sidebar-compact .user-card { display: flex; justify-content: center; padding-inline: 0; }
 .side-nav button:disabled { opacity: .35; cursor: not-allowed; }
 .new-project-option { margin-top: 5px; border-top: 1px solid var(--line)!important; color: var(--accent-dark); }
@@ -276,7 +277,8 @@ html[data-theme="dark"] { color-scheme:dark; }
 .preview-photos img { height:230px; object-fit:contain; background:#eef1ef; }
 .preview-photos div { min-height:65px; }
 .gantt-row[draggable],.gantt-mobile-card[draggable] { cursor:grab; }
-.drag-grip { position:absolute; z-index:6; left:3px; top:50%; display:grid; place-items:center; width:17px; height:28px; border-radius:7px; color:var(--subtle); font-size:8px; letter-spacing:-1px; line-height:1; transform:translateY(-50%) rotate(90deg); touch-action:none; cursor:grab; user-select:none; }
+.drag-grip { position:absolute; z-index:6; left:7px; top:50%; display:grid; place-items:center; width:14px; height:24px; border-radius:6px; color:var(--subtle); font-size:0; line-height:1; transform:translateY(-50%); touch-action:none; cursor:grab; user-select:none; }
+.drag-grip::before { content:""; width:3px; height:3px; border-radius:50%; background:currentColor; box-shadow:0 5px currentColor,0 -5px currentColor,5px 0 currentColor,5px 5px currentColor,5px -5px currentColor; transform:translateX(-2.5px); }
 .drag-grip:hover { color:var(--accent-dark); background:color-mix(in srgb,var(--accent) 10%,var(--surface-solid)); }
 .drag-grip:active { cursor:grabbing; }
 .gantt-row.is-dragging,.gantt-mobile-card.is-dragging { opacity:.38; cursor:grabbing; }
@@ -295,7 +297,7 @@ html[data-theme="dark"] { color-scheme:dark; }
 .report-gantt-page > header p { margin:0; color:#74807b; font-size:7px; }
 .report-gantt-page > header > strong { color:#c96734; font:800 22px var(--font-display); }
 .report-gantt-page > header > strong small { display:block; color:#74807b; text-align:right; font-size:6px; }
-.print-gantt { margin-top:14px; overflow:hidden; border:1px solid #dfe4e2; border-radius:9px; }
+.print-gantt { position:relative; margin-top:14px; overflow:hidden; border:1px solid #dfe4e2; border-radius:9px; }
 .print-gantt-heading,.print-gantt-row { display:grid; grid-template-columns:235px minmax(0,1fr); min-height:27px; border-bottom:1px solid #e5e9e7; }
 .print-gantt-heading { min-height:29px; color:#7c8984; background:#f1f4f2; font:800 6px var(--font-display); }
 .print-gantt-heading > span { display:flex; align-items:center; padding:0 9px; border-right:1px solid #dfe4e2; }
@@ -311,6 +313,9 @@ html[data-theme="dark"] { color-scheme:dark; }
 .print-timeline { position:relative; overflow:hidden; background:repeating-linear-gradient(90deg,transparent 0,transparent calc(10% - 1px),#e5e9e7 calc(10% - 1px),#e5e9e7 10%); }
 .print-planned-bar { position:absolute; top:8px; height:10px; min-width:3px; overflow:hidden; border-radius:3px; opacity:.42; }
 .print-planned-bar > b { display:block; height:100%; background:#26483d; opacity:1; }
+.print-dependency-layer { position:absolute; z-index:3; left:235px; right:0; top:29px; width:calc(100% - 235px); height:calc(100% - 29px); overflow:visible; pointer-events:none; }
+.print-dependency-layer polyline { fill:none; stroke:#c96734; stroke-width:1.35; vector-effect:non-scaling-stroke; opacity:.9; }
+.print-dependency-layer marker path { fill:#c96734; }
 .report-gantt-page > footer { display:flex; align-items:center; gap:14px; margin-top:10px; color:#74807b; font-size:6px; }
 .report-gantt-page > footer span { display:flex; align-items:center; gap:4px; }
 .report-gantt-page > footer i { width:13px; height:5px; border-radius:3px; background:#9fb0aa; }
@@ -318,8 +323,8 @@ html[data-theme="dark"] { color-scheme:dark; }
 .report-gantt-page > footer > b { margin-left:auto; font-size:6px; }
 
 .side-nav { align-content:start; }
-.task-table-head,.task-row { grid-template-columns:78px 1fr 65px 42px; }
-.task-eap-cell { display:flex!important; align-items:center; gap:8px; padding-left:22px; }
+.task-table-head,.task-row { grid-template-columns:96px 1fr 65px 42px; }
+.task-eap-cell { display:flex!important; align-items:center; gap:9px; min-height:32px; padding-left:24px; }
 .task-eap-cell > b { color:var(--subtle); font-size:10px; }
 .task-eap-cell .tree-toggle { flex:0 0 auto; margin:0; }
 .parent-progress-note { display:flex; align-items:flex-start; gap:11px; padding:14px; border:1px solid color-mix(in srgb,var(--green) 25%,var(--line)); border-radius:14px; background:color-mix(in srgb,var(--green) 8%,var(--surface-solid)); }
@@ -493,6 +498,7 @@ html[data-theme="dark"] { color-scheme:dark; }
   .report-gantt-print { display:block!important; }
   .report-gantt-page { page:gantt; break-before:page; page-break-before:always; break-inside:avoid; box-sizing:border-box; width:auto!important; max-width:none!important; min-height:0; margin:0!important; padding:7mm; border:0; }
   .print-gantt-heading,.print-gantt-row { grid-template-columns:62mm minmax(0,1fr); }
+  .print-dependency-layer { left:62mm; width:calc(100% - 62mm); }
   .print-gantt-row { min-height:7mm; }
   .print-planned-bar { opacity:1!important; outline:0.3mm solid currentColor; outline-offset:-0.3mm; }
   .print-planned-bar > b { opacity:1!important; border-right:0.4mm solid currentColor; }
