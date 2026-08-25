@@ -528,7 +528,7 @@ export function Schedule({
             </div>
             <svg
               className="gantt-dependency-layer"
-              viewBox={`0 0 1000 ${Math.max(56, visible.length * 56)}`}
+              viewBox={`0 0 1000 ${Math.max(48, visible.length * 48)}`}
               preserveAspectRatio="none"
               aria-hidden="true"
             >
@@ -579,26 +579,54 @@ export function Schedule({
                       1000,
                   ),
                 );
-                const sourceY = sourceIndex * 56 + 28;
-                const targetY = targetIndex * 56 + 28;
+                const sourceY = sourceIndex * 48 + 22;
+                const targetY = targetIndex * 48 + 22;
                 const sourceUsesFinish = relation === "FS" || relation === "FF";
                 const targetUsesFinish = relation === "FF" || relation === "SF";
                 const rowDirection = targetY >= sourceY ? 1 : -1;
-                const laneOffset = (targetIndex % 4) * 5;
+                const laneOffset = (targetIndex % 4) * 6;
+                const crossedTasks = visible.slice(
+                  Math.min(sourceIndex, targetIndex),
+                  Math.max(sourceIndex, targetIndex) + 1,
+                );
+                const crossedStarts = crossedTasks.map((item) =>
+                  Math.max(
+                    0,
+                    Math.min(
+                      995,
+                      (daysBetween(project.start, item.plannedStart) /
+                        projectDays) *
+                        1000,
+                    ),
+                  ),
+                );
+                const crossedEnds = crossedTasks.map((item) =>
+                  Math.max(
+                    0,
+                    Math.min(
+                      995,
+                      ((daysBetween(project.start, item.plannedEnd) + 1) /
+                        projectDays) *
+                        1000,
+                    ),
+                  ),
+                );
                 const sourceExitX = Math.max(
                   5,
                   Math.min(
                     995,
                     sourceUsesFinish
-                      ? Math.max(sourceX, targetX) + 18 + laneOffset
-                      : Math.min(sourceX, targetX) - 18 - laneOffset,
+                      ? Math.max(...crossedEnds) + 18 + laneOffset
+                      : Math.min(...crossedStarts) - 18 - laneOffset,
                   ),
                 );
                 const targetEntryX = Math.max(
                   5,
                   Math.min(995, targetX + (targetUsesFinish ? 12 : -12)),
                 );
-                const approachY = targetY - rowDirection * 13;
+                // Use the free strip above/below the destination bar so long
+                // dependency routes do not cross task periods.
+                const approachY = targetY - rowDirection * 16;
                 return (
                   <polyline
                     key={`${predecessor.id}-${task.id}`}
@@ -646,7 +674,7 @@ export function Schedule({
                       <b>{task.code}</b>
                       {childCount > 0 && (
                         <span
-                          className="tree-toggle"
+                          className={`tree-toggle ${collapsedIds.has(task.id) ? "collapsed" : "expanded"}`}
                           role="button"
                           aria-label={
                             collapsedIds.has(task.id)
@@ -658,7 +686,7 @@ export function Schedule({
                             toggleCollapsed(task.id);
                           }}
                         >
-                          {collapsedIds.has(task.id) ? "›" : "⌄"}
+                          <Icon name="chevron" />
                         </span>
                       )}
                     </span>

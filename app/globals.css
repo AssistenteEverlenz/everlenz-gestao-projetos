@@ -144,7 +144,8 @@ html[data-theme="dark"] .glass { border-color: var(--line); }
 .sidebar-compact .sidebar-project-label { visibility:hidden; }
 .sidebar-compact .sidebar-project { display:flex; width:48px; min-width:48px; max-width:48px; justify-self:center; justify-content:center; padding:8px; }
 .sidebar-compact .side-nav { width:48px; min-width:48px; max-width:48px; justify-self:center; }
-.sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { width:48px; min-width:48px; max-width:48px; justify-content:center; padding:0; }
+.sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { flex:none; width:48px; min-width:48px; max-width:48px; height:46px; min-height:46px; max-height:46px; justify-content:center; padding:0; border-radius:14px; }
+.sidebar-compact .side-nav svg,.sidebar-compact .side-footer > button svg { flex:0 0 20px; width:20px!important; min-width:20px; max-width:20px; height:20px!important; min-height:20px; max-height:20px; }
 .sidebar-compact .user-card { display: flex; justify-content: center; padding-inline: 0; }
 .side-nav button:disabled { opacity: .35; cursor: not-allowed; }
 .new-project-option { margin-top: 5px; border-top: 1px solid var(--line)!important; color: var(--accent-dark); }
@@ -324,7 +325,7 @@ html[data-theme="dark"] { color-scheme:dark; }
 
 .side-nav { align-content:start; }
 .task-table-head,.task-row { grid-template-columns:96px 1fr 65px 42px; }
-.task-eap-cell { display:flex!important; align-items:center; gap:9px; min-height:32px; padding-left:24px; }
+.task-eap-cell { display:flex!important; align-items:center; gap:9px; height:48px; min-height:48px; padding-left:24px; }
 .task-eap-cell > b { color:var(--subtle); font-size:10px; }
 .task-eap-cell .tree-toggle { flex:0 0 auto; margin:0; }
 .parent-progress-note { display:flex; align-items:flex-start; gap:11px; padding:14px; border:1px solid color-mix(in srgb,var(--green) 25%,var(--line)); border-radius:14px; background:color-mix(in srgb,var(--green) 8%,var(--surface-solid)); }
@@ -346,6 +347,7 @@ html[data-theme="dark"] { color-scheme:dark; }
 .gantt-dependency-layer { position:absolute; z-index:4; left:480px; right:0; top:38px; width:calc(100% - 480px); height:calc(100% - 38px); overflow:visible; pointer-events:none; }
 .gantt-dependency-layer polyline { fill:none; stroke:color-mix(in srgb,var(--accent-dark) 72%,var(--text)); stroke-width:2; vector-effect:non-scaling-stroke; opacity:.8; }
 .gantt-dependency-layer marker path { fill:var(--accent-dark); }
+.gantt-row,.task-row { min-height:48px; }
 .confirm-delete-modal { display:grid; justify-items:center; gap:10px; padding:26px; text-align:center; }
 .confirm-delete-modal h3 { margin:0; font:800 18px var(--font-display); }
 .confirm-delete-modal p { max-width:430px; margin:0 0 10px; color:var(--muted); font-size:12px; line-height:1.55; }
@@ -364,8 +366,10 @@ html[data-theme="dark"] { color-scheme:dark; }
 @media (max-width:1100px) and (min-width:768px) { .gantt-dependency-layer { left:410px; width:calc(100% - 410px); } }
 
 /* Hierarquia, leitura e semântica operacional do cronograma */
-.task-name-cell { position:relative; }
-.tree-toggle { display:inline-grid; place-items:center; width:18px; height:18px; margin-right:5px; border:1px solid var(--line-strong); border-radius:6px; background:var(--surface-solid); color:var(--accent-dark); font:900 14px/1 var(--font-display); vertical-align:middle; cursor:pointer; }
+.task-name-cell { position:relative; min-height:48px; align-content:center; }
+.tree-toggle { display:inline-grid; place-items:center; flex:0 0 18px; width:18px; height:18px; margin:0; border:1px solid var(--line-strong); border-radius:6px; background:var(--surface-solid); color:var(--accent-dark); cursor:pointer; }
+.tree-toggle svg { width:12px; height:12px; transition:transform .18s ease; }
+.tree-toggle.expanded svg { transform:rotate(90deg); }
 .gantt-row.is-parent .task-row { background:color-mix(in srgb,var(--surface-solid) 94%,var(--bg-2)); }
 .gantt-row.is-parent .task-row strong { font-weight:800; }
 .gantt-mobile-card.is-parent .tree-toggle { width:20px; height:20px; margin-left:-1px; }
@@ -397,7 +401,7 @@ html[data-theme="dark"] { color-scheme:dark; }
   .gantt-summary span { font-size:10px; }
   .gantt-summary strong { font-size:14px; }
   .task-table-head,.timeline-head { font-size:10px; }
-  .gantt-row { min-height:56px; }
+  .gantt-row,.task-row { min-height:48px; }
   .task-row > span:first-child,.task-row > span:nth-child(3) { font-size:11px; }
   .task-row strong { font-size:12px; }
   .task-row small { font-size:10px; }
