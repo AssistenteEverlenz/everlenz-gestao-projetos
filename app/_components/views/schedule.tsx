@@ -70,7 +70,7 @@ const formatDate = (value: string) =>
 
 type RoutePoint = { x: number; y: number };
 
-function roundedOrthogonalPath(points: RoutePoint[], radius = 5) {
+function roundedOrthogonalPath(points: RoutePoint[], radius = 4) {
   const route = points.filter(
     (point, index) =>
       index === 0 ||
@@ -561,7 +561,7 @@ export function Schedule({
             </div>
             <svg
               className="gantt-dependency-layer"
-              viewBox={`0 0 1000 ${Math.max(48, visible.length * 48)}`}
+              viewBox={`0 0 1000 ${Math.max(44, visible.length * 44)}`}
               preserveAspectRatio="none"
               aria-hidden="true"
             >
@@ -612,17 +612,17 @@ export function Schedule({
                       1000,
                   ),
                 );
-                const sourceY = sourceIndex * 48 + 22;
-                const targetY = targetIndex * 48 + 22;
+                const sourceY = sourceIndex * 44 + 22;
+                const targetY = targetIndex * 44 + 22;
                 const sourceUsesFinish = relation === "FS" || relation === "FF";
                 const targetUsesFinish = relation === "FF" || relation === "SF";
                 const rowDirection = targetY >= sourceY ? 1 : -1;
-                const laneOffset = (targetIndex % 4) * 6;
-                const crossedTasks = visible.slice(
-                  Math.min(sourceIndex, targetIndex),
-                  Math.max(sourceIndex, targetIndex) + 1,
+                const laneOffset = (targetIndex % 3) * 4;
+                const intermediateTasks = visible.slice(
+                  Math.min(sourceIndex, targetIndex) + 1,
+                  Math.max(sourceIndex, targetIndex),
                 );
-                const crossedStarts = crossedTasks.map((item) =>
+                const intermediateStarts = intermediateTasks.map((item) =>
                   Math.max(
                     0,
                     Math.min(
@@ -633,7 +633,7 @@ export function Schedule({
                     ),
                   ),
                 );
-                const crossedEnds = crossedTasks.map((item) =>
+                const intermediateEnds = intermediateTasks.map((item) =>
                   Math.max(
                     0,
                     Math.min(
@@ -649,17 +649,19 @@ export function Schedule({
                   Math.min(
                     995,
                     sourceUsesFinish
-                      ? Math.max(...crossedEnds) + 18 + laneOffset
-                      : Math.min(...crossedStarts) - 18 - laneOffset,
+                      ? Math.max(sourceX, ...intermediateEnds) + 14 + laneOffset
+                      : Math.min(sourceX, ...intermediateStarts) -
+                          14 -
+                          laneOffset,
                   ),
                 );
                 const targetEntryX = Math.max(
                   5,
-                  Math.min(995, targetX + (targetUsesFinish ? 12 : -12)),
+                  Math.min(995, targetX + (targetUsesFinish ? 10 : -10)),
                 );
                 // Use the free strip above/below the destination bar so long
                 // dependency routes do not cross task periods.
-                const approachY = targetY - rowDirection * 16;
+                const approachY = targetY - rowDirection * 15;
                 const dependencyPath = roundedOrthogonalPath([
                   { x: sourceX, y: sourceY },
                   { x: sourceExitX, y: sourceY },
@@ -1324,13 +1326,23 @@ function TaskForm({
           : predecessor.plannedStart;
       const start = shiftWorkingDays(anchor, nextLag, workDays);
       setPlannedStart(start);
-      setPlannedEnd(workingEnd(start, activityDuration, workDays));
+      const end = workingEnd(start, activityDuration, workDays);
+      setPlannedEnd(end);
+      if (!initial) {
+        setBaselineStart(start);
+        setBaselineEnd(end);
+      }
     } else {
       const anchor =
         nextType === "FF" ? predecessor.plannedEnd : predecessor.plannedStart;
       const end = shiftWorkingDays(anchor, nextLag, workDays);
       setPlannedEnd(end);
-      setPlannedStart(shiftWorkingDays(end, -(activityDuration - 1), workDays));
+      const start = shiftWorkingDays(end, -(activityDuration - 1), workDays);
+      setPlannedStart(start);
+      if (!initial) {
+        setBaselineStart(start);
+        setBaselineEnd(end);
+      }
     }
   }
   async function submit(event: React.FormEvent) {
@@ -1338,15 +1350,19 @@ function TaskForm({
     setSaving(true);
     setError("");
     try {
+      const safePlannedEnd =
+        plannedEnd < plannedStart ? plannedStart : plannedEnd;
+      const safeBaselineEnd =
+        baselineEnd < baselineStart ? baselineStart : baselineEnd;
       await onSave({
         id: nextId,
         code: generatedCode,
         name,
         phase: phase || "Sem etapa",
         plannedStart,
-        plannedEnd: milestone ? plannedStart : plannedEnd,
+        plannedEnd: milestone ? plannedStart : safePlannedEnd,
         baselineStart,
-        baselineEnd: milestone ? baselineStart : baselineEnd,
+        baselineEnd: milestone ? baselineStart : safeBaselineEnd,
         progress: initial?.progress ?? 0,
         weight,
         responsible,
@@ -1423,7 +1439,14 @@ function TaskForm({
           onChange={(event) => {
             const value = event.target.value;
             setPlannedStart(value);
-            setPlannedEnd(workingEnd(value, durationWorkDays, workDays));
+            if (value > plannedEnd) {
+              setPlannedEnd(value);
+              setDurationWorkDays(1);
+              if (!initial) setBaselineEnd(value);
+            } else {
+              setDurationWorkDays(workingDuration(value, plannedEnd, workDays));
+            }
+            if (!initial) setBaselineStart(value);
           }}
         />
       </label>
@@ -1437,9 +1460,13 @@ function TaskForm({
           disabled={milestone || derivesPeriod}
           value={milestone ? plannedStart : plannedEnd}
           onChange={(event) => {
-            const value = event.target.value;
+            const value =
+              event.target.value < plannedStart
+                ? plannedStart
+                : event.target.value;
             setPlannedEnd(value);
             setDurationWorkDays(workingDuration(plannedStart, value, workDays));
+            if (!initial) setBaselineEnd(value);
           }}
         />
       </label>
@@ -1454,7 +1481,9 @@ function TaskForm({
           onChange={(event) => {
             const value = Math.max(1, Number(event.target.value));
             setDurationWorkDays(value);
-            setPlannedEnd(workingEnd(plannedStart, value, workDays));
+            const end = workingEnd(plannedStart, value, workDays);
+            setPlannedEnd(end);
+            if (!initial) setBaselineEnd(end);
           }}
         />
       </label>
@@ -1464,7 +1493,11 @@ function TaskForm({
           type="date"
           disabled={derivesPeriod}
           value={baselineStart}
-          onChange={(event) => setBaselineStart(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value;
+            setBaselineStart(value);
+            if (value > baselineEnd) setBaselineEnd(value);
+          }}
         />
       </label>
       <label>
@@ -1474,7 +1507,13 @@ function TaskForm({
           min={baselineStart}
           disabled={milestone || derivesPeriod}
           value={milestone ? baselineStart : baselineEnd}
-          onChange={(event) => setBaselineEnd(event.target.value)}
+          onChange={(event) =>
+            setBaselineEnd(
+              event.target.value < baselineStart
+                ? baselineStart
+                : event.target.value,
+            )
+          }
         />
       </label>
       <label>

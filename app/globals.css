@@ -327,10 +327,14 @@ html[data-theme="dark"] { color-scheme:dark; }
 .sidebar { overflow:hidden; }
 .side-nav button,.side-footer > button { white-space:nowrap; transition:background-color .2s ease,color .2s ease,box-shadow .2s ease; }
 .side-nav svg,.side-footer > button svg { flex:0 0 20px; width:20px; min-width:20px; height:20px; }
-.sidebar-compact .side-nav,.sidebar-compact .side-footer { width:44px; min-width:44px; max-width:44px; justify-self:center; }
-.sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { width:44px; min-width:44px; max-width:44px; height:44px; min-height:44px; max-height:44px; border-radius:13px; }
+.sidebar-compact .sidebar { width:76px; padding-inline:10px; }
+.sidebar-compact .main-area { padding-left:104px; }
+.sidebar-compact .brand,.sidebar-compact .sidebar-project,.sidebar-compact .side-nav,.sidebar-compact .side-footer { width:56px; min-width:56px; max-width:56px; justify-self:center; }
+.sidebar-compact .sidebar-project { padding:10px; }
+.sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { width:56px; min-width:56px; max-width:56px; height:44px; min-height:44px; max-height:44px; justify-content:center; border-radius:13px; }
+.sidebar-compact .side-nav button.active::before,.sidebar-compact .side-footer > button.active::before { left:-10px; }
 .task-table-head,.task-row { grid-template-columns:96px 1fr 65px 42px; }
-.task-eap-cell { display:flex!important; align-items:center; gap:9px; height:48px; min-height:48px; padding-left:24px; }
+.task-eap-cell { display:flex!important; align-items:center; gap:9px; height:44px; min-height:44px; padding-left:24px; }
 .task-eap-cell > b { color:var(--subtle); font-size:10px; }
 .task-eap-cell .tree-toggle { flex:0 0 auto; margin:0; }
 .parent-progress-note { display:flex; align-items:flex-start; gap:11px; padding:14px; border:1px solid color-mix(in srgb,var(--green) 25%,var(--line)); border-radius:14px; background:color-mix(in srgb,var(--green) 8%,var(--surface-solid)); }
@@ -353,7 +357,7 @@ html[data-theme="dark"] { color-scheme:dark; }
 .gantt-dependency-layer polyline { fill:none; stroke:color-mix(in srgb,var(--accent-dark) 72%,var(--text)); stroke-width:2; vector-effect:non-scaling-stroke; opacity:.8; }
 .gantt-dependency-layer .dependency-path { fill:none; stroke:color-mix(in srgb,var(--accent-dark) 72%,var(--text)); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; opacity:.72; }
 .gantt-dependency-layer marker path { fill:var(--accent-dark); }
-.gantt-row,.task-row { min-height:48px; }
+.gantt-row,.task-row { min-height:44px; }
 .confirm-delete-modal { display:grid; justify-items:center; gap:10px; padding:26px; text-align:center; }
 .confirm-delete-modal h3 { margin:0; font:800 18px var(--font-display); }
 .confirm-delete-modal p { max-width:430px; margin:0 0 10px; color:var(--muted); font-size:12px; line-height:1.55; }
@@ -372,7 +376,7 @@ html[data-theme="dark"] { color-scheme:dark; }
 @media (max-width:1100px) and (min-width:768px) { .gantt-dependency-layer { left:410px; width:calc(100% - 410px); } }
 
 /* Hierarquia, leitura e semântica operacional do cronograma */
-.task-name-cell { position:relative; min-height:48px; align-content:center; }
+.task-name-cell { position:relative; min-height:44px; align-content:center; }
 .tree-toggle { display:inline-grid; place-items:center; flex:0 0 18px; width:18px; height:18px; margin:0; border:1px solid var(--line-strong); border-radius:6px; background:var(--surface-solid); color:var(--accent-dark); cursor:pointer; }
 .tree-toggle svg { width:12px; height:12px; transition:transform .18s ease; }
 .tree-toggle.expanded svg { transform:rotate(90deg); }
@@ -407,7 +411,7 @@ html[data-theme="dark"] { color-scheme:dark; }
   .gantt-summary span { font-size:10px; }
   .gantt-summary strong { font-size:14px; }
   .task-table-head,.timeline-head { font-size:10px; }
-  .gantt-row,.task-row { min-height:48px; }
+  .gantt-row,.task-row { min-height:44px; }
   .task-row > span:first-child,.task-row > span:nth-child(3) { font-size:11px; }
   .task-row strong { font-size:12px; }
   .task-row small { font-size:10px; }
