@@ -142,7 +142,7 @@ html[data-theme="dark"] .glass { border-color: var(--line); }
 .sidebar-compact .brand { padding-inline: 4px; justify-content: center; }
 .sidebar-compact .brand span,.sidebar-compact .project-copy,.sidebar-compact .sidebar-project > svg,.sidebar-compact .side-nav button > span,.sidebar-compact .side-nav em,.sidebar-compact .side-footer > button > span,.sidebar-compact .user-card > span:nth-child(2),.sidebar-compact .user-card > svg { display: none; }
 .sidebar-compact .sidebar-project-label { visibility:hidden; }
-.sidebar-compact .sidebar-project { display: flex; justify-content: center; padding: 8px; }
+.sidebar-compact .sidebar-project { display:flex; width:48px; min-width:48px; max-width:48px; justify-self:center; justify-content:center; padding:8px; }
 .sidebar-compact .side-nav button,.sidebar-compact .side-footer > button { justify-content: center; padding-inline: 10px; }
 .sidebar-compact .user-card { display: flex; justify-content: center; padding-inline: 0; }
 .side-nav button:disabled { opacity: .35; cursor: not-allowed; }
@@ -318,8 +318,8 @@ html[data-theme="dark"] { color-scheme:dark; }
 .report-gantt-page > footer > b { margin-left:auto; font-size:6px; }
 
 .side-nav { align-content:start; }
-.task-table-head,.task-row { grid-template-columns:64px 1fr 65px 42px; }
-.task-eap-cell { display:flex!important; align-items:center; gap:5px; padding-left:2px; }
+.task-table-head,.task-row { grid-template-columns:78px 1fr 65px 42px; }
+.task-eap-cell { display:flex!important; align-items:center; gap:8px; padding-left:22px; }
 .task-eap-cell > b { color:var(--subtle); font-size:10px; }
 .task-eap-cell .tree-toggle { flex:0 0 auto; margin:0; }
 .parent-progress-note { display:flex; align-items:flex-start; gap:11px; padding:14px; border:1px solid color-mix(in srgb,var(--green) 25%,var(--line)); border-radius:14px; background:color-mix(in srgb,var(--green) 8%,var(--surface-solid)); }
@@ -337,6 +337,26 @@ html[data-theme="dark"] { color-scheme:dark; }
 .journal-actions-menu button:hover { background:var(--surface-soft); }
 .journal-actions-menu button.danger { color:var(--red); }
 .dependency-fields > small { color:var(--muted); font-size:10px; line-height:1.4; }
+.gantt-grid { position:relative; }
+.gantt-dependency-layer { position:absolute; z-index:4; left:480px; right:0; top:38px; width:calc(100% - 480px); height:calc(100% - 38px); overflow:visible; pointer-events:none; }
+.gantt-dependency-layer polyline { fill:none; stroke:color-mix(in srgb,var(--accent-dark) 72%,var(--text)); stroke-width:2; vector-effect:non-scaling-stroke; opacity:.8; }
+.gantt-dependency-layer marker path { fill:var(--accent-dark); }
+.confirm-delete-modal { display:grid; justify-items:center; gap:10px; padding:26px; text-align:center; }
+.confirm-delete-modal h3 { margin:0; font:800 18px var(--font-display); }
+.confirm-delete-modal p { max-width:430px; margin:0 0 10px; color:var(--muted); font-size:12px; line-height:1.55; }
+.confirm-delete-icon { display:grid; place-items:center; width:52px; height:52px; border-radius:16px; color:var(--red); background:color-mix(in srgb,var(--red) 12%,var(--surface-solid)); }
+.confirm-delete-icon svg { width:24px; }
+.button-spinner { width:15px; height:15px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:button-spin .7s linear infinite; }
+@keyframes button-spin { to { transform:rotate(360deg); } }
+.work-calendar-form { display:grid; gap:18px; padding:22px; }
+.weekday-options { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; }
+.weekday-options label { display:grid; justify-items:center; gap:4px; padding:12px 5px; border:1px solid var(--line); border-radius:12px; background:var(--surface-soft); cursor:pointer; }
+.weekday-options label.active { border-color:color-mix(in srgb,var(--green) 55%,var(--line)); background:color-mix(in srgb,var(--green) 11%,var(--surface-solid)); }
+.weekday-options input { width:16px; height:16px; padding:0; accent-color:var(--green); }
+.weekday-options strong { font-size:11px; }
+.weekday-options small { color:var(--muted); font-size:8px; }
+
+@media (max-width:1100px) and (min-width:768px) { .gantt-dependency-layer { left:410px; width:calc(100% - 410px); } }
 
 /* Hierarquia, leitura e semântica operacional do cronograma */
 .task-name-cell { position:relative; }
@@ -444,6 +464,7 @@ html[data-theme="dark"] { color-scheme:dark; }
   .bottom-nav button { font-size:10px; }
   .report-activity-block > header { grid-template-columns:28px 1fr; }
   .report-activity-block > header > b { grid-column:2; }
+  .weekday-options { grid-template-columns:repeat(4,1fr); }
   .entry-history-actions { width:100%; }
   .entry-history-actions > button { flex:1; }
 }

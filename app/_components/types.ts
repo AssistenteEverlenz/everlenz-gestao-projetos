@@ -1,4 +1,5 @@
-export type ViewId = "overview" | "schedule" | "journal" | "reports" | "team" | "settings";
+export type ViewId =
+  "overview" | "schedule" | "journal" | "reports" | "team" | "settings";
 
 export type Project = {
   id: string;
@@ -11,6 +12,7 @@ export type Project = {
   status: "Planejamento" | "No prazo" | "Atenção" | "Atrasada" | "Concluída";
   description?: string;
   contractNumber?: string;
+  workDays?: number[];
 };
 
 export type DependencyType = "FS" | "SS" | "FF" | "SF";

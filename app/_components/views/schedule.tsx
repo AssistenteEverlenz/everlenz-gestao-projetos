@@ -24,6 +24,13 @@ import type {
   ViewId,
 } from "../types";
 import { Modal } from "../ui";
+import {
+  nextWorkingDay,
+  projectWorkDays,
+  shiftWorkingDays,
+  workingDuration,
+  workingEnd,
+} from "../work-calendar";
 
 type Props = {
   project: Project;
@@ -39,6 +46,7 @@ type Props = {
   deleteEntry: (entry: JournalEntry) => Promise<void>;
   reorderTasks: (tasks: Task[]) => Promise<void>;
   updateTaskProgress: (id: string, progress: number) => void;
+  updateProjectWorkDays: (workDays: number[]) => Promise<void>;
   setToast: (value: string) => void;
 };
 
@@ -59,11 +67,6 @@ const formatDate = (value: string) =>
       year: "numeric",
     })
     .replace(" de ", " ");
-const shiftDate = (value: string, days: number) => {
-  const date = toDate(value);
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-};
 
 export function Schedule({
   project,
@@ -78,12 +81,16 @@ export function Schedule({
   deleteEntry,
   reorderTasks,
   updateTaskProgress,
+  updateProjectWorkDays,
   setToast,
 }: Props) {
   const [selected, setSelected] = useState<Task | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletingTask, setDeletingTask] = useState(false);
   const [editing, setEditing] = useState(false);
   const [historyTask, setHistoryTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [zoom, setZoom] = useState<"Dias" | "Semanas">("Semanas");
   const [showBaseline, setShowBaseline] = useState(true);
   const [filterCritical, setFilterCritical] = useState(false);
@@ -399,8 +406,11 @@ export function Schedule({
           >
             <Icon name="plus" /> Nova atividade
           </button>
-          <button className="secondary-btn compact">
-            <Icon name="filter" /> Filtros
+          <button
+            className="secondary-btn compact"
+            onClick={() => setCalendarOpen(true)}
+          >
+            <Icon name="calendar" /> Dias de trabalho
           </button>
         </div>
         <div className="toolbar-group center">
@@ -516,6 +526,72 @@ export function Schedule({
                 <span key={`${label}-${index}`}>{label}</span>
               ))}
             </div>
+            <svg
+              className="gantt-dependency-layer"
+              viewBox={`0 0 1000 ${Math.max(56, visible.length * 56)}`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <marker
+                  id="dependency-arrow"
+                  markerWidth="7"
+                  markerHeight="7"
+                  refX="6"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <path d="M0,0 L7,3.5 L0,7 Z" />
+                </marker>
+              </defs>
+              {visible.map((task, targetIndex) => {
+                const sourceIndex = visible.findIndex(
+                  (item) => item.id === task.dependencyId,
+                );
+                if (sourceIndex < 0) return null;
+                const predecessor = visible[sourceIndex];
+                const relation = task.dependencyType ?? "FS";
+                const sourceDate =
+                  relation === "FS" || relation === "FF"
+                    ? predecessor.plannedEnd
+                    : predecessor.plannedStart;
+                const targetDate =
+                  relation === "FS" || relation === "SS"
+                    ? task.plannedStart
+                    : task.plannedEnd;
+                const sourceX = Math.max(
+                  0,
+                  Math.min(
+                    995,
+                    ((daysBetween(project.start, sourceDate) +
+                      (relation === "FS" || relation === "FF" ? 1 : 0)) /
+                      projectDays) *
+                      1000,
+                  ),
+                );
+                const targetX = Math.max(
+                  0,
+                  Math.min(
+                    995,
+                    (daysBetween(project.start, targetDate) / projectDays) *
+                      1000,
+                  ),
+                );
+                const sourceY = sourceIndex * 56 + 28;
+                const targetY = targetIndex * 56 + 28;
+                const middleX =
+                  sourceX <= targetX
+                    ? sourceX + Math.max(14, (targetX - sourceX) / 2)
+                    : sourceX + 18;
+                return (
+                  <polyline
+                    key={`${predecessor.id}-${task.id}`}
+                    points={`${sourceX},${sourceY} ${middleX},${sourceY} ${middleX},${targetY} ${targetX},${targetY}`}
+                    markerEnd="url(#dependency-arrow)"
+                  />
+                );
+              })}
+            </svg>
             {visible.map((task) => {
               const childCount = orderedTasks.filter(
                 (item) => item.parentId === task.id,
@@ -591,7 +667,9 @@ export function Schedule({
                       </small>
                     </span>
                     <span>
-                      {task.milestone ? "Marco" : `${duration(task)}d`}
+                      {task.milestone
+                        ? "Marco"
+                        : `${workingDuration(task.plannedStart, task.plannedEnd, project.workDays)}d`}
                     </span>
                     <span>
                       <b>{task.progress}%</b>
@@ -768,6 +846,16 @@ export function Schedule({
           }}
         />
       )}
+      {calendarOpen && (
+        <WorkCalendarModal
+          project={project}
+          onClose={() => setCalendarOpen(false)}
+          onSave={async (days) => {
+            await updateProjectWorkDays(days);
+            setCalendarOpen(false);
+          }}
+        />
+      )}
       {selected && (
         <Modal
           title={editing ? `Editar ${selected.name}` : selected.name}
@@ -896,24 +984,7 @@ export function Schedule({
                     entries.some((entry) => entry.taskId === selected.id) ||
                     tasks.some((task) => task.parentId === selected.id)
                   }
-                  onClick={async () => {
-                    if (
-                      !window.confirm(
-                        `Excluir definitivamente a atividade “${selected.name}”?`,
-                      )
-                    )
-                      return;
-                    try {
-                      await deleteTask(selected.id);
-                      setSelected(null);
-                    } catch (cause) {
-                      setToast(
-                        cause instanceof Error
-                          ? cause.message
-                          : "Não foi possível excluir a atividade.",
-                      );
-                    }
-                  }}
+                  onClick={() => setConfirmDelete(true)}
                 >
                   Excluir atividade
                 </button>
@@ -941,6 +1012,58 @@ export function Schedule({
           )}
         </Modal>
       )}
+      {selected && confirmDelete && (
+        <Modal
+          title="Excluir atividade"
+          subtitle="Esta ação não pode ser desfeita."
+          onClose={() => {
+            if (!deletingTask) setConfirmDelete(false);
+          }}
+        >
+          <div className="confirm-delete-modal">
+            <span className="confirm-delete-icon">
+              <Icon name="alert" />
+            </span>
+            <h3>Excluir “{selected.name}”?</h3>
+            <p>
+              A atividade será removida e a numeração EAP será reorganizada. Só
+              é possível excluir itens sem subitens e sem Diário de Obra.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="secondary-btn"
+                disabled={deletingTask}
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="danger-btn"
+                disabled={deletingTask}
+                onClick={async () => {
+                  setDeletingTask(true);
+                  try {
+                    await deleteTask(selected.id);
+                    setConfirmDelete(false);
+                    setSelected(null);
+                  } catch (cause) {
+                    setToast(
+                      cause instanceof Error
+                        ? cause.message
+                        : "Não foi possível excluir a atividade.",
+                    );
+                  } finally {
+                    setDeletingTask(false);
+                  }
+                }}
+              >
+                {deletingTask && <i className="button-spinner" />}
+                {deletingTask ? "Excluindo..." : "Excluir definitivamente"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {historyTask && (
         <EntryHistoryModal
           task={historyTask}
@@ -951,6 +1074,89 @@ export function Schedule({
         />
       )}
     </div>
+  );
+}
+
+function WorkCalendarModal({
+  project,
+  onClose,
+  onSave,
+}: {
+  project: Project;
+  onClose: () => void;
+  onSave: (days: number[]) => Promise<void>;
+}) {
+  const labels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const [days, setDays] = useState(projectWorkDays(project.workDays));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <Modal
+      title="Calendário de trabalho"
+      subtitle="Defina quais dias entram no cálculo das durações e dependências."
+      onClose={onClose}
+    >
+      <div className="work-calendar-form">
+        <div className="weekday-options">
+          {labels.map((label, day) => (
+            <label key={label} className={days.includes(day) ? "active" : ""}>
+              <input
+                type="checkbox"
+                checked={days.includes(day)}
+                onChange={() =>
+                  setDays((current) =>
+                    current.includes(day)
+                      ? current.filter((item) => item !== day)
+                      : [...current, day].sort(),
+                  )
+                }
+              />
+              <strong>{label}</strong>
+              <small>{days.includes(day) ? "Trabalho" : "Folga"}</small>
+            </label>
+          ))}
+        </div>
+        <div className="modal-note">
+          <Icon name="calendar" />
+          <p>
+            Ao salvar, as durações existentes são preservadas e as datas são
+            recalculadas. Dependências FS começam no próximo dia de trabalho.
+          </p>
+        </div>
+        {error && (
+          <div className="access-message">
+            <Icon name="alert" />
+            {error}
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="secondary-btn" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            className="primary-btn"
+            disabled={saving || !days.length}
+            onClick={async () => {
+              setSaving(true);
+              setError("");
+              try {
+                await onSave(days);
+              } catch (cause) {
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : "Não foi possível salvar o calendário.",
+                );
+                setSaving(false);
+              }
+            }}
+          >
+            {saving && <i className="button-spinner" />}
+            {saving ? "Recalculando..." : "Salvar calendário"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -969,6 +1175,7 @@ function TaskForm({
   onClose: () => void;
   onSave: (task: Task) => void | Promise<void>;
 }) {
+  const workDays = projectWorkDays(project.workDays);
   const [nextId] = useState(() => initial?.id ?? crypto.randomUUID());
   const [name, setName] = useState(initial?.name ?? "");
   const [phase, setPhase] = useState(initial?.phase ?? "");
@@ -977,6 +1184,13 @@ function TaskForm({
   );
   const [plannedEnd, setPlannedEnd] = useState(
     initial?.plannedEnd ?? project.start,
+  );
+  const [durationWorkDays, setDurationWorkDays] = useState(() =>
+    workingDuration(
+      initial?.plannedStart ?? project.start,
+      initial?.plannedEnd ?? project.start,
+      workDays,
+    ),
   );
   const [baselineStart, setBaselineStart] = useState(
     initial?.baselineStart ?? project.start,
@@ -1013,24 +1227,21 @@ function TaskForm({
   ) {
     const predecessor = tasks.find((task) => task.id === nextDependencyId);
     if (!predecessor) return;
-    const activityDuration = Math.max(
-      1,
-      daysBetween(plannedStart, plannedEnd) + 1,
-    );
+    const activityDuration = Math.max(1, durationWorkDays);
     if (nextType === "FS" || nextType === "SS") {
-      const start = shiftDate(
-        nextType === "FS" ? predecessor.plannedEnd : predecessor.plannedStart,
-        nextLag,
-      );
+      const anchor =
+        nextType === "FS"
+          ? nextWorkingDay(predecessor.plannedEnd, workDays)
+          : predecessor.plannedStart;
+      const start = shiftWorkingDays(anchor, nextLag, workDays);
       setPlannedStart(start);
-      setPlannedEnd(shiftDate(start, activityDuration - 1));
+      setPlannedEnd(workingEnd(start, activityDuration, workDays));
     } else {
-      const end = shiftDate(
-        nextType === "FF" ? predecessor.plannedEnd : predecessor.plannedStart,
-        nextLag,
-      );
+      const anchor =
+        nextType === "FF" ? predecessor.plannedEnd : predecessor.plannedStart;
+      const end = shiftWorkingDays(anchor, nextLag, workDays);
       setPlannedEnd(end);
-      setPlannedStart(shiftDate(end, -(activityDuration - 1)));
+      setPlannedStart(shiftWorkingDays(end, -(activityDuration - 1), workDays));
     }
   }
   async function submit(event: React.FormEvent) {
@@ -1119,7 +1330,11 @@ function TaskForm({
           max={project.end}
           required
           value={plannedStart}
-          onChange={(event) => setPlannedStart(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value;
+            setPlannedStart(value);
+            setPlannedEnd(workingEnd(value, durationWorkDays, workDays));
+          }}
         />
       </label>
       <label>
@@ -1131,7 +1346,26 @@ function TaskForm({
           required
           disabled={milestone}
           value={milestone ? plannedStart : plannedEnd}
-          onChange={(event) => setPlannedEnd(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value;
+            setPlannedEnd(value);
+            setDurationWorkDays(workingDuration(plannedStart, value, workDays));
+          }}
+        />
+      </label>
+      <label>
+        <span>Duração em dias úteis</span>
+        <input
+          type="number"
+          min="1"
+          required
+          disabled={milestone}
+          value={milestone ? 1 : durationWorkDays}
+          onChange={(event) => {
+            const value = Math.max(1, Number(event.target.value));
+            setDurationWorkDays(value);
+            setPlannedEnd(workingEnd(plannedStart, value, workDays));
+          }}
         />
       </label>
       <label>

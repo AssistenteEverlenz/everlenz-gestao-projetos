@@ -21,6 +21,7 @@ import type {
 } from "./types";
 import { Modal } from "./ui";
 import { normalizeTaskHierarchy } from "./task-structure";
+import { rescheduleTasks } from "./work-calendar";
 import { Overview } from "./views/overview";
 import { Schedule } from "./views/schedule";
 import { Journal } from "./views/journal";
@@ -44,6 +45,8 @@ import {
   recordRemoteEntry,
   reorderRemoteTasks,
   updateRemoteEntry,
+  updateRemoteProjectWorkDays,
+  updateRemoteTaskDates,
   updateRemoteTask,
   updateRemoteTaskProgress,
 } from "@/lib/supabase/repository";
@@ -379,6 +382,25 @@ export function Workspace() {
     if (remoteMode) await reorderRemoteTasks(workspace.project.id, normalized);
     updateCurrent((current) => ({ ...current, tasks: normalized }));
     setToast("Ordem e hierarquia do Gantt atualizadas.");
+  }
+
+  async function updateProjectWorkDays(workDays: number[]) {
+    if (!workspace) return;
+    const tasks = rescheduleTasks(
+      workspace.tasks,
+      workspace.project.workDays,
+      workDays,
+    );
+    if (remoteMode) {
+      await updateRemoteProjectWorkDays(workspace.project.id, workDays);
+      await updateRemoteTaskDates(workspace.project.id, tasks);
+    }
+    updateCurrent((current) => ({
+      ...current,
+      project: { ...current.project, workDays },
+      tasks,
+    }));
+    setToast("Calendário de trabalho atualizado.");
   }
 
   async function deleteTask(taskId: string) {
@@ -818,6 +840,7 @@ export function Workspace() {
               deleteEntry={deleteEntry}
               reorderTasks={reorderTasks}
               updateTaskProgress={updateTaskProgress}
+              updateProjectWorkDays={updateProjectWorkDays}
               setToast={setToast}
             />
           )}
@@ -956,6 +979,7 @@ function ProjectModal({
         description,
         progress: 0,
         status: "Planejamento",
+        workDays: [1, 2, 3, 4, 5],
       });
     } catch (cause) {
       setError(

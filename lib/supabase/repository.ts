@@ -77,7 +77,7 @@ export async function loadWorkspaces(userEmail: string) {
   const { data: projectRows, error: projectError } = await supabase
     .from("projects")
     .select(
-      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status",
+      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days",
     )
     .order("created_at");
   if (projectError) throw projectError;
@@ -233,6 +233,7 @@ export async function loadWorkspaces(userEmail: string) {
           end: row.planned_end_date,
           progress: 0,
           status: statusMap[row.status] ?? "Planejamento",
+          workDays: row.work_days ?? [1, 2, 3, 4, 5],
         },
         tasks,
         entries,
@@ -311,6 +312,35 @@ export async function createRemoteProject(project: Project) {
   );
   if (error) throw error;
   return data as string;
+}
+
+export async function updateRemoteProjectWorkDays(
+  projectId: string,
+  workDays: number[],
+) {
+  const { error } = await getSupabaseBrowserClient()
+    .from("projects")
+    .update({ work_days: workDays })
+    .eq("id", projectId);
+  if (error) throw error;
+}
+
+export async function updateRemoteTaskDates(projectId: string, tasks: Task[]) {
+  const supabase = getSupabaseBrowserClient();
+  const results = await Promise.all(
+    tasks.map((task) =>
+      supabase
+        .from("tasks")
+        .update({
+          planned_start: task.plannedStart,
+          planned_end: task.plannedEnd,
+        })
+        .eq("id", task.id)
+        .eq("project_id", projectId),
+    ),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw failed.error;
 }
 
 export async function createRemoteTask(
