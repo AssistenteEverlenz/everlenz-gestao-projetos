@@ -643,6 +643,10 @@ html[data-theme="dark"] { color-scheme:dark; }
 .sidebar-compact .side-footer { margin-top:auto; }
 
 @media screen and (max-width:767px) {
+  .sidebar,.sidebar-open .sidebar,.sidebar-compact .sidebar { display:none!important; }
+  .sidebar-open .main-area,.sidebar-compact .main-area { padding-left:0; }
+  .modal-backdrop { place-items:center; overflow:hidden; padding:calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom)); }
+  .modal,.modal-wide { width:100%; max-height:calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); border:1px solid var(--line-strong); border-radius:22px; }
   .schedule-toolbar { display:grid; grid-template-columns:1fr; gap:8px; padding:9px; overflow:hidden; }
   .schedule-toolbar>.toolbar-group { width:100%; }
   .schedule-toolbar .primary-btn { width:100%; min-height:42px; }

@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./icons";
+
+let openModalCount = 0;
+let bodyOverflowBeforeModal = "";
+const subscribeToClient = () => () => undefined;
 
 export function ProgressRing({
   value,
@@ -64,6 +69,27 @@ export function Modal({
   dismissible?: boolean;
 }) {
   const backdrop = useRef<HTMLDivElement>(null);
+  const mounted = useSyncExternalStore(
+    subscribeToClient,
+    () => true,
+    () => false,
+  );
+
+  useEffect(() => {
+    if (openModalCount === 0) {
+      bodyOverflowBeforeModal = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    openModalCount += 1;
+
+    return () => {
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) {
+        document.body.style.overflow = bodyOverflowBeforeModal;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       const modals = document.querySelectorAll(".modal-backdrop");
@@ -76,7 +102,7 @@ export function Modal({
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [dismissible, onClose]);
-  return (
+  const content = (
     <div
       ref={backdrop}
       className="modal-backdrop"
@@ -103,6 +129,8 @@ export function Modal({
       </section>
     </div>
   );
+
+  return mounted ? createPortal(content, document.body) : null;
 }
 
 export function EmptyPhoto({ children }: { children: ReactNode }) {
