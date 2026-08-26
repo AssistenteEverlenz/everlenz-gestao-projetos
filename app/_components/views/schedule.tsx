@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
@@ -117,7 +117,13 @@ export function Schedule({
   updateProjectWorkDays,
   setToast,
 }: Props) {
-  const [selected, setSelected] = useState<Task | null>(null);
+  const [selected, setSelected] = useState<Task | null>(() => {
+    if (typeof window === "undefined") return null;
+    const taskId = window.sessionStorage.getItem("emdia-focus-task");
+    if (!taskId) return null;
+    window.sessionStorage.removeItem("emdia-focus-task");
+    return tasks.find((item) => item.id === taskId) ?? null;
+  });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -143,13 +149,6 @@ export function Schedule({
     asChild: boolean;
   } | null>(null);
   const orderedTasks = useMemo(() => normalizeTaskHierarchy(tasks), [tasks]);
-  useEffect(() => {
-    const taskId = window.sessionStorage.getItem("emdia-focus-task");
-    if (!taskId) return;
-    window.sessionStorage.removeItem("emdia-focus-task");
-    const task = tasks.find((item) => item.id === taskId);
-    if (task) setSelected(task);
-  }, [tasks]);
   const statusCounts = useMemo(
     () =>
       orderedTasks.reduce(
