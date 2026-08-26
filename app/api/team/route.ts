@@ -208,6 +208,39 @@ export async function POST(request: Request) {
     if (addError)
       throw new ApiError(`Erro ao adicionar à equipe: ${addError.message}`);
 
+    // A equipe representa a conta/organização, não apenas a obra aberta.
+    // Assim, gestores e colaboradores entram na mesma conta e enxergam todos
+    // os projetos existentes da organização com o papel escolhido.
+    const { data: organizationProjects, error: organizationProjectsError } =
+      await admin
+        .from("projects")
+        .select("id")
+        .eq("organization_id", project.organization_id)
+        .neq("id", projectId);
+    if (organizationProjectsError)
+      throw new ApiError(
+        `Erro ao consultar os projetos da conta: ${organizationProjectsError.message}`,
+        500,
+      );
+    if (organizationProjects?.length) {
+      const { error: organizationMembershipError } = await admin
+        .from("project_members")
+        .upsert(
+          organizationProjects.map((organizationProject) => ({
+            project_id: organizationProject.id,
+            user_id: authUser.id,
+            role,
+            accepted_at: new Date().toISOString(),
+          })),
+          { onConflict: "project_id,user_id" },
+        );
+      if (organizationMembershipError)
+        throw new ApiError(
+          `Erro ao liberar os projetos da conta: ${organizationMembershipError.message}`,
+          500,
+        );
+    }
+
     await admin
       .from("project_invitations")
       .delete()
@@ -227,6 +260,7 @@ export async function POST(request: Request) {
         pending: false,
       },
       senha_provisoria: password,
+      projetos_liberados: (organizationProjects?.length ?? 0) + 1,
     });
   } catch (cause) {
     if (createdAuthUserId && supabaseUrl && supabaseServiceRoleKey) {

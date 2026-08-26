@@ -877,12 +877,12 @@ export function Schedule({
                     )}
                     {task.name}
                   </strong>
-                  <span>
+                  <span className="mobile-task-dates">
                     <Icon name="calendar" />
                     {formatDate(task.plannedStart)} →{" "}
                     {formatDate(task.plannedEnd)}
                   </span>
-                  <span>
+                  <span className="mobile-task-responsible">
                     <Icon name="team" />
                     {task.responsible || "Sem responsável"}
                     {journalCount > 0 && (
