@@ -66,7 +66,7 @@ export function OnboardingTour({ userId, enabled, navigate }: { userId: string; 
     : { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
 
   return createPortal(<div className="emdia-tour" role="dialog" aria-modal="true">
-    <div className="tour-dim"/>
+    {!rect && <div className="tour-dim"/>}
     {rect && <div className="tour-spotlight" style={{ top: rect.top - 7, left: rect.left - 7, width: rect.width + 14, height: rect.height + 14 }}/>} 
     <section className="tour-card" style={cardStyle}>
       <button className="tour-close" aria-label="Fechar apresentação" onClick={() => stop(false)}>×</button>
