@@ -700,21 +700,23 @@ export function Schedule({
                   className={`gantt-row status-${status} ${childCount ? "is-parent" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${task.critical ? "critical" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
                   key={task.id}
                 >
-                  <span
-                    className="drag-grip"
-                    role="button"
-                    aria-label={`Reorganizar ${task.name}`}
-                    onPointerDown={(event) => beginPointerDrag(event, task.id)}
-                    onPointerMove={movePointerDrag}
-                    onPointerUp={endPointerDrag}
-                  >
-                    ••
-                  </span>
                   <button
                     className="task-row"
                     onClick={() => setSelected(task)}
                   >
                     <span className="task-eap-cell">
+                      <span
+                        className="drag-grip"
+                        role="button"
+                        aria-label={`Reorganizar ${task.name}`}
+                        onPointerDown={(event) =>
+                          beginPointerDrag(event, task.id)
+                        }
+                        onPointerMove={movePointerDrag}
+                        onPointerUp={endPointerDrag}
+                      >
+                        ••
+                      </span>
                       <b>{task.code}</b>
                       {childCount > 0 && (
                         <span
@@ -1541,58 +1543,61 @@ function TaskForm({
           onChange={(event) => setWeight(Number(event.target.value))}
         />
       </label>
-      <label>
-        <span>Atividade predecessora</span>
-        <select
-          value={dependencyId}
-          onChange={(event) => {
-            const value = event.target.value;
-            setDependencyId(value);
-            if (value) synchronizeDependency(value);
-          }}
-        >
-          <option value="">Sem dependência</option>
-          {availableTasks.map((task) => (
-            <option key={task.id} value={task.id}>
-              {task.code} · {task.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {dependencyId && (
-        <label className="dependency-fields">
-          <span>Relação e defasagem</span>
-          <span>
-            <select
-              value={dependencyType}
-              onChange={(event) => {
-                const value = event.target.value as DependencyType;
-                setDependencyType(value);
-                synchronizeDependency(dependencyId, value, lagDays);
-              }}
-            >
-              <option value="FS">Término → Início (FS)</option>
-              <option value="SS">Início → Início (SS)</option>
-              <option value="FF">Término → Término (FF)</option>
-              <option value="SF">Início → Término (SF)</option>
-            </select>
-            <input
-              aria-label="Defasagem em dias, positiva ou negativa"
-              title="Use dias positivos para esperar e negativos para antecipar"
-              type="number"
-              value={lagDays}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setLagDays(value);
-                synchronizeDependency(dependencyId, dependencyType, value);
-              }}
-            />
-          </span>
-          <small>
-            0 dias alinha as datas; use + para espera e − para antecipação.
-          </small>
+      <div className="task-dependency-row">
+        <label>
+          <span>Atividade predecessora</span>
+          <select
+            value={dependencyId}
+            onChange={(event) => {
+              const value = event.target.value;
+              setDependencyId(value);
+              if (value) synchronizeDependency(value);
+            }}
+          >
+            <option value="">Sem dependência</option>
+            {availableTasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.code} · {task.name}
+              </option>
+            ))}
+          </select>
         </label>
-      )}
+        {dependencyId && (
+          <>
+            <label>
+              <span>Relação</span>
+              <select
+                value={dependencyType}
+                onChange={(event) => {
+                  const value = event.target.value as DependencyType;
+                  setDependencyType(value);
+                  synchronizeDependency(dependencyId, value, lagDays);
+                }}
+              >
+                <option value="FS">Término → Início (FS)</option>
+                <option value="SS">Início → Início (SS)</option>
+                <option value="FF">Término → Término (FF)</option>
+                <option value="SF">Início → Término (SF)</option>
+              </select>
+            </label>
+            <label className="dependency-lag-field">
+              <span>Defasagem</span>
+              <input
+                aria-label="Defasagem em dias, positiva ou negativa"
+                title="Use dias positivos para esperar e negativos para antecipar"
+                type="number"
+                value={lagDays}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setLagDays(value);
+                  synchronizeDependency(dependencyId, dependencyType, value);
+                }}
+              />
+              <small>+ espera · − antecipa</small>
+            </label>
+          </>
+        )}
+      </div>
       <div className="task-checks">
         <label>
           <input
@@ -1608,7 +1613,9 @@ function TaskForm({
             checked={milestone}
             onChange={(event) => setMilestone(event.target.checked)}
           />
-          <span>Marco do projeto</span>
+          <span title="Evento de duração zero que representa uma entrega, aprovação ou decisão importante">
+            Marco do projeto
+          </span>
         </label>
       </div>
       <label className="full">
