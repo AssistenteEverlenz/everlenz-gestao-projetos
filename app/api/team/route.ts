@@ -5,11 +5,15 @@ import {
   type User,
 } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const defaultSupabaseUrl = "https://lpfoxpqezcfdvdecfdos.supabase.co";
+const defaultSupabasePublishableKey =
+  "sb_publishable_G_KSK1Ud0DPkXTR9iJIRhg_By7aDsa7";
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? defaultSupabaseUrl;
 const supabasePublicKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-  "";
+  defaultSupabasePublishableKey;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const allowedRoles = [
