@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
@@ -143,6 +143,13 @@ export function Schedule({
     asChild: boolean;
   } | null>(null);
   const orderedTasks = useMemo(() => normalizeTaskHierarchy(tasks), [tasks]);
+  useEffect(() => {
+    const taskId = window.sessionStorage.getItem("emdia-focus-task");
+    if (!taskId) return;
+    window.sessionStorage.removeItem("emdia-focus-task");
+    const task = tasks.find((item) => item.id === taskId);
+    if (task) setSelected(task);
+  }, [tasks]);
   const statusCounts = useMemo(
     () =>
       orderedTasks.reduce(
