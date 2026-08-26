@@ -169,7 +169,13 @@ export function Workspace() {
   const [toast, setToast] = useState<string | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [realtimeState, setRealtimeState] = useState<
+    "connecting" | "connected" | "updating" | "error"
+  >("connecting");
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const workspace =
     workspaces.find((item) => item.project.id === projectId) ?? workspaces[0];
   const authenticatedMember = workspace?.members.find(
@@ -243,6 +249,7 @@ export function Workspace() {
             : (loaded[0]?.project.id ?? null),
         );
         setRemoteLoading(false);
+        setRealtimeState("connected");
       })
       .catch((cause) => {
         if (!active) return;
@@ -257,6 +264,48 @@ export function Workspace() {
       active = false;
     };
   }, [authReady, authUser, reloadToken, remoteMode]);
+
+  useEffect(() => {
+    if (!remoteMode || !authUser) return;
+    const supabase = getSupabaseBrowserClient();
+    const refresh = () => {
+      setRealtimeState("updating");
+      if (realtimeRefreshTimer.current)
+        clearTimeout(realtimeRefreshTimer.current);
+      realtimeRefreshTimer.current = setTimeout(
+        () => setReloadToken((value) => value + 1),
+        320,
+      );
+    };
+    const tables = [
+      "profiles",
+      "projects",
+      "project_members",
+      "project_invitations",
+      "tasks",
+      "daily_logs",
+      "update_photos",
+      "status_reports",
+    ];
+    let channel = supabase.channel(`emdia-live-${authUser.id}`);
+    for (const table of tables) {
+      channel = channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table },
+        refresh,
+      );
+    }
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") setRealtimeState("connected");
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT")
+        setRealtimeState("error");
+    });
+    return () => {
+      if (realtimeRefreshTimer.current)
+        clearTimeout(realtimeRefreshTimer.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [authUser, remoteMode]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -850,7 +899,13 @@ export function Workspace() {
           </div>
           <div className="header-actions">
             <div className="sync-state">
-              <span /> {remoteMode ? "Supabase sincronizado" : "Modo local"}
+              <span className={realtimeState} /> {remoteMode
+                ? realtimeState === "updating"
+                  ? "Atualizando em tempo real..."
+                  : realtimeState === "error"
+                    ? "Reconectando..."
+                    : "Sincronização em tempo real"
+                : "Modo local"}
             </div>
             <button
               className="icon-btn"

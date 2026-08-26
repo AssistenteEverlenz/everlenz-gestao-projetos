@@ -125,6 +125,9 @@ export function Schedule({
   const [creating, setCreating] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [zoom, setZoom] = useState<"Dias" | "Semanas">("Semanas");
+  const [mobileView, setMobileView] = useState<"execution" | "timeline">(
+    "execution",
+  );
   const [showBaseline, setShowBaseline] = useState(true);
   const [filterCritical, setFilterCritical] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
@@ -813,7 +816,24 @@ export function Schedule({
             })}
           </div>
         </div>
-        <div className="gantt-mobile-list">
+        <div
+          className="mobile-gantt-view-switch"
+          aria-label="Visualização mobile do cronograma"
+        >
+          <button
+            className={mobileView === "execution" ? "active" : ""}
+            onClick={() => setMobileView("execution")}
+          >
+            <Icon name="menu" /> Execução
+          </button>
+          <button
+            className={mobileView === "timeline" ? "active" : ""}
+            onClick={() => setMobileView("timeline")}
+          >
+            <Icon name="gantt" /> Linha do tempo
+          </button>
+        </div>
+        <div className={`gantt-mobile-list mobile-mode-${mobileView}`}>
           {visible.map((task) => {
             const depth = taskDepth(task);
             const journalCount = entries.filter(
@@ -824,6 +844,18 @@ export function Schedule({
             ).length;
             const status = taskExecutionStatus(task);
             const palette = taskStatusPalette[status];
+            const timelineLeft = Math.max(
+              0,
+              Math.min(
+                100,
+                (daysBetween(project.start, task.plannedStart) / projectDays) *
+                  100,
+              ),
+            );
+            const timelineWidth = Math.max(
+              4,
+              Math.min(100 - timelineLeft, (duration(task) / projectDays) * 100),
+            );
             return (
               <button
                 data-task-id={task.id}
@@ -856,55 +888,104 @@ export function Schedule({
                   className="mobile-task-color"
                   style={{ background: palette.period }}
                 />
-                <div>
-                  <small>
-                    {task.code} · {task.phase}
-                    {childCount > 0 &&
-                      ` · ${childCount} subitem${childCount > 1 ? "s" : ""}`}
-                  </small>
-                  <strong>
-                    {childCount > 0 && (
-                      <span
-                        className="tree-toggle"
-                        role="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleCollapsed(task.id);
-                        }}
-                      >
-                        {collapsedIds.has(task.id) ? "›" : "⌄"}
+                {mobileView === "execution" ? (
+                  <>
+                    <div className="mobile-task-copy">
+                      <small>
+                        <b>{task.code}</b>
+                        <span>{task.phase}</span>
+                        {childCount > 0 && <em>{childCount} subitens</em>}
+                      </small>
+                      <strong>
+                        {childCount > 0 && (
+                          <span
+                            className="tree-toggle"
+                            role="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleCollapsed(task.id);
+                            }}
+                          >
+                            {collapsedIds.has(task.id) ? "›" : "⌄"}
+                          </span>
+                        )}
+                        {task.name}
+                      </strong>
+                      <span className="mobile-task-dates">
+                        <Icon name="calendar" />
+                        {formatDate(task.plannedStart)} — {formatDate(task.plannedEnd)}
+                        {journalCount > 0 && (
+                          <em className="mobile-journal-count">
+                            <Icon name="journal" />
+                            {journalCount}
+                          </em>
+                        )}
                       </span>
-                    )}
-                    {task.name}
-                  </strong>
-                  <span className="mobile-task-dates">
-                    <Icon name="calendar" />
-                    {formatDate(task.plannedStart)} →{" "}
-                    {formatDate(task.plannedEnd)}
-                  </span>
-                  <span className="mobile-task-responsible">
-                    <Icon name="team" />
-                    {task.responsible || "Sem responsável"}
-                    {journalCount > 0 && (
-                      <em className="mobile-journal-count">
-                        <Icon name="journal" />
-                        {journalCount}
-                      </em>
-                    )}
-                  </span>
-                  <div
-                    className="thin-progress"
-                    style={{ background: palette.period }}
-                  >
-                    <i
-                      style={{
-                        width: `${task.progress}%`,
-                        background: palette.progress,
-                      }}
-                    />
-                  </div>
-                </div>
-                <b style={{ color: palette.period }}>{task.progress}%</b>
+                      <div className="thin-progress">
+                        <i
+                          style={{
+                            width: `${task.progress}%`,
+                            background: palette.period,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <span
+                      className="mobile-progress-value"
+                      style={{ color: palette.period }}
+                    >
+                      <b>{task.progress}%</b>
+                      <small>
+                        {status === "active"
+                          ? "executado"
+                          : taskStatusPalette[status].label}
+                      </small>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="mobile-timeline-label">
+                      <small>{task.code}</small>
+                      <strong>{task.name}</strong>
+                      {childCount > 0 && (
+                        <span
+                          className="tree-toggle"
+                          role="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleCollapsed(task.id);
+                          }}
+                        >
+                          {collapsedIds.has(task.id) ? "›" : "⌄"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mobile-timeline-track">
+                      <span className="mobile-timeline-dates">
+                        <i>{formatDate(task.plannedStart)}</i>
+                        <i>{formatDate(task.plannedEnd)}</i>
+                      </span>
+                      <span className="mobile-timeline-rail">
+                        <i
+                          className="mobile-timeline-bar"
+                          style={{
+                            left: `${timelineLeft}%`,
+                            width: `${timelineWidth}%`,
+                            background: palette.period,
+                          }}
+                        >
+                          <b
+                            style={{
+                              width: `${task.progress}%`,
+                              background: palette.progress,
+                            }}
+                          />
+                        </i>
+                      </span>
+                      <b>{task.progress}%</b>
+                    </div>
+                  </>
+                )}
               </button>
             );
           })}
