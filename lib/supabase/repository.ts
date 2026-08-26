@@ -39,9 +39,17 @@ const databaseRole: Record<Member["role"], string> = {
 
 export async function getProfile() {
   const supabase = getSupabaseBrowserClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError) throw authError;
+  if (!user) throw new Error("Usuário não autenticado.");
+
   const { data, error } = await supabase
     .from("profiles")
     .select("id,organization_id,full_name")
+    .eq("id", user.id)
     .single();
   if (error) throw error;
   return data as ProfileState;
