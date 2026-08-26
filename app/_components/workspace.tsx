@@ -20,6 +20,8 @@ import type {
   ViewId,
 } from "./types";
 import { Modal } from "./ui";
+import { FirstAccess } from "./first-access";
+import { OnboardingTour } from "./onboarding-tour";
 import { normalizeTaskHierarchy } from "./task-structure";
 import { rescheduleTasks, rescheduleTaskSuccessors } from "./work-calendar";
 import { Overview } from "./views/overview";
@@ -36,6 +38,7 @@ import {
   approveRemoteStatusReport,
   createRemoteProject,
   createRemoteTask,
+  deleteRemoteMember,
   deleteRemoteEntry,
   deleteRemoteTask,
   ensureRemoteStatusReport,
@@ -43,8 +46,10 @@ import {
   inviteRemoteMember,
   loadAvailableWorkspaces,
   recordRemoteEntry,
+  resetRemoteMemberPassword,
   reorderRemoteTasks,
   updateRemoteEntry,
+  updateRemoteMember,
   updateRemoteProjectWorkDays,
   updateRemoteTaskDates,
   updateRemoteTask,
@@ -165,6 +170,16 @@ export function Workspace() {
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspace =
     workspaces.find((item) => item.project.id === projectId) ?? workspaces[0];
+  const authenticatedMember = workspace?.members.find(
+    (member) => member.id === (authUser?.id ?? currentUser.id),
+  ) ?? (authUser ? {
+    ...currentUser,
+    id: authUser.id,
+    name: authUser.user_metadata.full_name || authUser.email || "Usuário",
+    email: authUser.email ?? "",
+    initials: String(authUser.user_metadata.full_name || authUser.email || "U").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase(),
+    role: "Usuário" as const,
+  } : currentUser);
   const meta = titles[view];
 
   useEffect(() => {
@@ -529,11 +544,13 @@ export function Workspace() {
     setToast("Diário excluído e avanço da atividade recalculado.");
   }
 
-  function setMembers(value: React.SetStateAction<Member[]>) {
-    updateCurrent((current) => ({
-      ...current,
-      members: typeof value === "function" ? value(current.members) : value,
-    }));
+  function updateMembersInAccount(update: (members: Member[]) => Member[]) {
+    const organizationId = workspace?.organizationId;
+    setWorkspaces((current) => current.map((item) =>
+      !organizationId || item.organizationId === organizationId
+        ? { ...item, members: update(item.members) }
+        : item,
+    ));
   }
 
   async function inviteMember(member: Member) {
@@ -541,13 +558,31 @@ export function Workspace() {
     const result = remoteMode
       ? await inviteRemoteMember(workspace.project.id, member)
       : { member, temporaryPassword: undefined };
-    setMembers((current) => [...current, result.member]);
+    updateMembersInAccount((current) => current.some((item) => item.id === result.member.id) ? current : [...current, result.member]);
     setToast(
       remoteMode
         ? "Usuário criado e liberado para acessar o Em Dia."
         : "Pessoa adicionada à equipe.",
     );
     return { temporaryPassword: result.temporaryPassword };
+  }
+
+  async function updateMember(member: Member) {
+    if (!workspace) return;
+    if (remoteMode) await updateRemoteMember(workspace.project.id, member);
+    updateMembersInAccount((current) => current.map((item) => item.id === member.id ? { ...item, ...member } : item));
+  }
+
+  async function resetMemberPassword(member: Member) {
+    if (!workspace || !remoteMode) return { temporaryPassword: "" };
+    const result = await resetRemoteMemberPassword(workspace.project.id, member.id);
+    return { temporaryPassword: result.senha_provisoria };
+  }
+
+  async function deleteMember(member: Member) {
+    if (!workspace) return;
+    if (remoteMode) await deleteRemoteMember(workspace.project.id, member.id);
+    updateMembersInAccount((current) => current.filter((item) => item.id !== member.id));
   }
 
   async function ensureReport(reportDate: string) {
@@ -693,6 +728,7 @@ export function Workspace() {
         <div className="sidebar-project-label">PROJETO ATUAL</div>
         <button
           className="sidebar-project"
+          data-tour="projeto-atual"
           onClick={() =>
             workspace ? setProjectMenu((open) => !open) : setProjectModal(true)
           }
@@ -746,6 +782,7 @@ export function Workspace() {
           {nav.map((item) => (
             <button
               key={item.id}
+              data-tour={`nav-${item.id}`}
               disabled={!workspace}
               className={view === item.id ? "active" : ""}
               onClick={() => navigate(item.id)}
@@ -770,10 +807,10 @@ export function Workspace() {
             <span>Configurações</span>
           </button>
           <div className="user-card">
-            <span className="avatar avatar-dark">GA</span>
+            <span className="avatar avatar-dark">{authenticatedMember.initials}</span>
             <span>
-              <strong>Gustavo Adriano</strong>
-              <small>Administrador</small>
+              <strong>{authenticatedMember.name}</strong>
+              <small>{authenticatedMember.role}</small>
             </span>
             <Icon name="more" />
           </div>
@@ -820,7 +857,7 @@ export function Workspace() {
               }
               title={remoteMode ? "Sair" : undefined}
             >
-              GA
+              {authenticatedMember.initials}
             </button>
           </div>
         </header>
@@ -863,7 +900,16 @@ export function Workspace() {
             />
           )}
           {workspace && common && view === "team" && (
-            <Team {...common} inviteMember={inviteMember} setToast={setToast} />
+            <Team
+              {...common}
+              currentUserId={authUser?.id ?? currentUser.id}
+              currentUserRole={workspace.members.find((member) => member.id === (authUser?.id ?? currentUser.id))?.role ?? "Usuário"}
+              inviteMember={inviteMember}
+              updateMember={updateMember}
+              resetMemberPassword={resetMemberPassword}
+              deleteMember={deleteMember}
+              setToast={setToast}
+            />
           )}
           {view === "settings" && (
             <Settings dark={dark} setDark={chooseTheme} setToast={setToast} />
@@ -876,6 +922,7 @@ export function Workspace() {
           {nav.slice(0, 4).map((item) => (
             <button
               key={item.id}
+              data-tour={`nav-${item.id}`}
               className={view === item.id ? "active" : ""}
               onClick={() => navigate(item.id)}
             >
@@ -884,6 +931,7 @@ export function Workspace() {
             </button>
           ))}
           <button
+            data-tour="nav-team"
             className={view === "team" || view === "settings" ? "active" : ""}
             onClick={() => navigate("team")}
           >
@@ -907,6 +955,17 @@ export function Workspace() {
           {toast}
         </div>
       )}
+      {remoteMode && authUser?.user_metadata.must_change_password === true && (
+        <FirstAccess user={authUser} onComplete={(user) => {
+          setAuthUser(user);
+          setToast("Senha atualizada. Seu acesso está protegido.");
+        }}/>
+      )}
+      {authUser && <OnboardingTour
+        userId={authUser.id}
+        enabled={authUser.user_metadata.must_change_password !== true}
+        navigate={navigate}
+      />}
     </div>
   );
 }

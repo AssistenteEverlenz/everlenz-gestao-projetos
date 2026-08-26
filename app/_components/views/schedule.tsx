@@ -1526,7 +1526,7 @@ function TaskForm({
         >
           <option value="">Definir depois</option>
           {members
-            .filter((member) => member.role !== "Cliente" && !member.pending)
+            .filter((member) => !member.pending)
             .map((member) => (
               <option key={member.id}>{member.name}</option>
             ))}

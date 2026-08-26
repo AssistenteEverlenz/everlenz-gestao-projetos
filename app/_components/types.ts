@@ -68,7 +68,7 @@ export type Member = {
   id: string;
   name: string;
   email: string;
-  role: "Administrador" | "Gestor" | "Engenheiro" | "Encarregado" | "Cliente";
+  role: "Administrador" | "Gestor" | "Usuário";
   initials: string;
   color: string;
   online: boolean;

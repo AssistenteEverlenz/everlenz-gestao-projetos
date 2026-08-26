@@ -18,9 +18,9 @@ type ProfileState = {
 const roleMap: Record<string, Member["role"]> = {
   admin: "Administrador",
   manager: "Gestor",
-  engineer: "Engenheiro",
-  foreman: "Encarregado",
-  client: "Cliente",
+  engineer: "Usuário",
+  foreman: "Usuário",
+  client: "Usuário",
 };
 
 const statusMap: Record<string, Project["status"]> = {
@@ -32,9 +32,7 @@ const statusMap: Record<string, Project["status"]> = {
 const databaseRole: Record<Member["role"], string> = {
   Administrador: "admin",
   Gestor: "manager",
-  Engenheiro: "engineer",
-  Encarregado: "foreman",
-  Cliente: "client",
+  Usuário: "engineer",
 };
 
 export async function getProfile() {
@@ -112,7 +110,7 @@ export async function loadWorkspaces(userEmail: string) {
         supabase
           .from("project_members")
           .select(
-            "user_id,role,profiles!project_members_user_id_fkey(full_name,avatar_url)",
+            "user_id,role,profiles!project_members_user_id_fkey(full_name,avatar_url,email)",
           )
           .eq("project_id", row.id),
         supabase
@@ -204,8 +202,8 @@ export async function loadWorkspaces(userEmail: string) {
         return {
           id: membership.user_id,
           name,
-          email: membership.user_id === profile.id ? userEmail : "",
-          role: roleMap[membership.role] ?? "Engenheiro",
+          email: related?.email || (membership.user_id === profile.id ? userEmail : ""),
+          role: roleMap[membership.role] ?? "Usuário",
           initials: name
             .split(" ")
             .map((part: string) => part[0])
@@ -221,7 +219,7 @@ export async function loadWorkspaces(userEmail: string) {
           id: invitation.id,
           name: invitation.email.split("@")[0],
           email: invitation.email,
-          role: roleMap[invitation.role] ?? "Engenheiro",
+          role: roleMap[invitation.role] ?? "Usuário",
           initials: invitation.email.slice(0, 2).toUpperCase(),
           color: "#8c654f",
           online: false,
@@ -290,6 +288,56 @@ export async function inviteRemoteMember(projectId: string, member: Member) {
     },
     temporaryPassword: result.senha_provisoria ?? undefined,
   };
+}
+
+async function teamRequest<T>(
+  method: "PATCH" | "DELETE",
+  body: Record<string, unknown>,
+) {
+  const supabase = getSupabaseBrowserClient();
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token;
+  if (!accessToken) throw new Error("Sessão inválida. Entre novamente.");
+  const response = await fetch("/api/team", {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const result = (await response.json()) as T & { error?: string };
+  if (!response.ok || result.error)
+    throw new Error(result.error ?? "Não foi possível gerenciar o acesso.");
+  return result;
+}
+
+export async function updateRemoteMember(
+  projectId: string,
+  member: Pick<Member, "id" | "name" | "role">,
+) {
+  return teamRequest<{ member: Member }>("PATCH", {
+    action: "update",
+    projectId,
+    userId: member.id,
+    name: member.name,
+    role: databaseRole[member.role],
+  });
+}
+
+export async function resetRemoteMemberPassword(
+  projectId: string,
+  userId: string,
+) {
+  return teamRequest<{ senha_provisoria: string; email: string }>("PATCH", {
+    action: "reset_password",
+    projectId,
+    userId,
+  });
+}
+
+export async function deleteRemoteMember(projectId: string, userId: string) {
+  return teamRequest<{ deleted: boolean }>("DELETE", { projectId, userId });
 }
 
 export async function ensureRemoteStatusReport(

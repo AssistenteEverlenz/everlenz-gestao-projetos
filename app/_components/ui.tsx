@@ -54,12 +54,14 @@ export function Modal({
   onClose,
   children,
   wide = false,
+  dismissible = true,
 }: {
   title: string;
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  dismissible?: boolean;
 }) {
   const backdrop = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -69,18 +71,18 @@ export function Modal({
         event.key === "Escape" &&
         modals[modals.length - 1] === backdrop.current
       )
-        onClose();
+        if (dismissible) onClose();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  }, [dismissible, onClose]);
   return (
     <div
       ref={backdrop}
       className="modal-backdrop"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (dismissible && event.target === event.currentTarget) onClose();
       }}
     >
       <section
@@ -93,9 +95,9 @@ export function Modal({
             <h2>{title}</h2>
             {subtitle && <p>{subtitle}</p>}
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Fechar">
+          {dismissible && <button className="icon-btn" onClick={onClose} aria-label="Fechar">
             <Icon name="close" />
-          </button>
+          </button>}
         </header>
         {children}
       </section>
