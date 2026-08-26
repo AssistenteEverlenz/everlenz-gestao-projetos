@@ -1,3 +1,6 @@
+import type { Task } from "./types";
+import { normalizeTaskHierarchy } from "./task-structure";
+
 const defaultDays = [1, 2, 3, 4, 5];
 
 export function projectWorkDays(days?: number[]) {
@@ -115,4 +118,103 @@ export function rescheduleTasks(
   }
   return result;
 }
-import type { Task } from "./types";
+
+/**
+ * Reagenda, em cascata, todos os sucessores da atividade alterada.
+ * A duração de cada sucessor é preservada e somente as datas são movidas.
+ */
+export function rescheduleTaskSuccessors(
+  tasks: Task[],
+  changedTaskId: string,
+  workDays?: number[],
+) {
+  let result = tasks.map((task) => ({ ...task }));
+  const originalDates = new Map(
+    result.map((task) => [task.id, `${task.plannedStart}|${task.plannedEnd}`]),
+  );
+  const durations = new Map(
+    result.map((task) => [
+      task.id,
+      workingDuration(task.plannedStart, task.plannedEnd, workDays),
+    ]),
+  );
+  result = normalizeTaskHierarchy(result);
+  let byId = new Map(result.map((task) => [task.id, task]));
+  const queue = [
+    changedTaskId,
+    ...result
+      .filter(
+        (task) =>
+          originalDates.get(task.id) !==
+          `${task.plannedStart}|${task.plannedEnd}`,
+      )
+      .map((task) => task.id),
+  ];
+  const processedSignatures = new Map<string, string>();
+  const maximumSteps = Math.max(1, tasks.length * tasks.length * 4);
+  let steps = 0;
+
+  while (queue.length && steps < maximumSteps) {
+    steps += 1;
+    const predecessorId = queue.shift();
+    if (!predecessorId) continue;
+    const predecessor = byId.get(predecessorId);
+    if (!predecessor) continue;
+
+    const successorIds = result
+      .filter((task) => task.dependencyId === predecessorId)
+      .map((task) => task.id);
+    for (const successorId of successorIds) {
+      const successor = byId.get(successorId);
+      if (!successor) continue;
+      const relation = successor.dependencyType ?? "FS";
+      const lag = successor.lagDays ?? 0;
+      const duration = durations.get(successor.id) ?? 1;
+      const signature = `${predecessor.plannedStart}|${predecessor.plannedEnd}|${relation}|${lag}|${duration}`;
+      if (processedSignatures.get(successor.id) === signature) continue;
+      processedSignatures.set(successor.id, signature);
+      const datesBefore = new Map(
+        result.map((task) => [
+          task.id,
+          `${task.plannedStart}|${task.plannedEnd}`,
+        ]),
+      );
+
+      if (relation === "FS" || relation === "SS") {
+        const anchor =
+          relation === "FS"
+            ? nextWorkingDay(predecessor.plannedEnd, workDays)
+            : predecessor.plannedStart;
+        successor.plannedStart = shiftWorkingDays(anchor, lag, workDays);
+        successor.plannedEnd = workingEnd(
+          successor.plannedStart,
+          duration,
+          workDays,
+        );
+      } else {
+        const anchor =
+          relation === "FF"
+            ? predecessor.plannedEnd
+            : predecessor.plannedStart;
+        successor.plannedEnd = shiftWorkingDays(anchor, lag, workDays);
+        successor.plannedStart = shiftWorkingDays(
+          successor.plannedEnd,
+          -(duration - 1),
+          workDays,
+        );
+      }
+
+      result = normalizeTaskHierarchy(result);
+      byId = new Map(result.map((task) => [task.id, task]));
+      for (const changed of result) {
+        if (
+          datesBefore.get(changed.id) !==
+          `${changed.plannedStart}|${changed.plannedEnd}`
+        )
+          queue.push(changed.id);
+      }
+    }
+  }
+
+  return result;
+}

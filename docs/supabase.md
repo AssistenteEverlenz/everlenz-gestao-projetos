@@ -37,8 +37,9 @@ se houver dados antigos que realmente precisem ser preservados.
    - Project URL
    - Publishable key (ou anon key em projetos legados)
 
-Não compartilhe a service_role, a secret key nem a senha do banco. Elas não são
-necessárias para conectar o navegador e ignoram as políticas RLS.
+Não compartilhe a service_role, a secret key nem a senha do banco. A
+`service_role` ignora as políticas RLS e, neste projeto, deve existir somente no
+ambiente protegido do servidor para a criação administrativa de usuários.
 
 ## Variáveis do Coolify
 
@@ -46,10 +47,16 @@ Cadastre como variáveis de ambiente da aplicação:
 
 NEXT_PUBLIC_SUPABASE_URL=https://SEU-PROJECT-REF.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=SUA_CHAVE_PUBLICAVEL
+SUPABASE_SERVICE_ROLE_KEY=SUA_CHAVE_SERVICE_ROLE_SECRETA
 NEXT_PUBLIC_APP_URL=https://emdia.everlenz.com.br
 
 Depois salve e faça “Redeploy”. Variáveis NEXT_PUBLIC são incorporadas durante o
 build, portanto reiniciar sem reconstruir a imagem não é suficiente.
+
+A `SUPABASE_SERVICE_ROLE_KEY` é usada exclusivamente pela rota de servidor
+`/api/team`. Ela permite criar o login da nova pessoa com e-mail já confirmado e
+uma senha provisória aleatória. A rota valida a sessão e o papel do administrador
+ou gestor antes da operação. Nunca use o prefixo `NEXT_PUBLIC` nessa chave.
 
 ## Armazenamento
 

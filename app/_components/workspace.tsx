@@ -21,7 +21,7 @@ import type {
 } from "./types";
 import { Modal } from "./ui";
 import { normalizeTaskHierarchy } from "./task-structure";
-import { rescheduleTasks } from "./work-calendar";
+import { rescheduleTasks, rescheduleTaskSuccessors } from "./work-calendar";
 import { Overview } from "./views/overview";
 import { Schedule } from "./views/schedule";
 import { Journal } from "./views/journal";
@@ -362,7 +362,11 @@ export function Workspace() {
     const previousCode =
       workspace.tasks.find((item) => item.id === task.id)?.code ?? task.code;
     const normalized = normalizeTaskHierarchy(
-      workspace.tasks.map((item) => (item.id === task.id ? task : item)),
+      rescheduleTaskSuccessors(
+        workspace.tasks.map((item) => (item.id === task.id ? task : item)),
+        task.id,
+        workspace.project.workDays,
+      ),
     );
     if (remoteMode) {
       await updateRemoteTask(
@@ -533,17 +537,17 @@ export function Workspace() {
   }
 
   async function inviteMember(member: Member) {
-    if (!workspace) return;
-    if (remoteMode) await inviteRemoteMember(workspace.project.id, member);
-    setMembers((current) => [
-      ...current,
-      remoteMode ? { ...member, pending: true } : member,
-    ]);
+    if (!workspace) return {};
+    const result = remoteMode
+      ? await inviteRemoteMember(workspace.project.id, member)
+      : { member, temporaryPassword: undefined };
+    setMembers((current) => [...current, result.member]);
     setToast(
       remoteMode
-        ? "Convite salvo. A pessoa deve acessar o Em Dia com esse e-mail."
-        : "Convite adicionado à equipe.",
+        ? "Usuário criado e liberado para acessar o Em Dia."
+        : "Pessoa adicionada à equipe.",
     );
+    return { temporaryPassword: result.temporaryPassword };
   }
 
   async function ensureReport(reportDate: string) {

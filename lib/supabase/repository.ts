@@ -250,15 +250,38 @@ export async function loadWorkspaces(userEmail: string) {
 }
 
 export async function inviteRemoteMember(projectId: string, member: Member) {
-  const { error } = await getSupabaseBrowserClient().rpc(
-    "invite_project_member",
-    {
-      p_project_id: projectId,
-      p_email: member.email,
-      p_role: databaseRole[member.role],
+  const supabase = getSupabaseBrowserClient();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error("Sessão inválida. Entre novamente.");
+  const response = await fetch("/api/team", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
     },
-  );
-  if (error) throw error;
+    body: JSON.stringify({
+      projectId,
+      name: member.name,
+      email: member.email,
+      role: databaseRole[member.role],
+    }),
+  });
+  const result = (await response.json()) as {
+    member?: Member & { role: string };
+    senha_provisoria?: string | null;
+    error?: string;
+  };
+  if (!response.ok || result.error)
+    throw new Error(result.error ?? "Não foi possível criar o acesso.");
+  return {
+    member: {
+      ...member,
+      id: result.member?.id ?? member.id,
+      pending: false,
+    },
+    temporaryPassword: result.senha_provisoria ?? undefined,
+  };
 }
 
 export async function ensureRemoteStatusReport(
