@@ -13,6 +13,8 @@ import type {
   JournalEntry,
   Member,
   Project,
+  ProjectIssue,
+  ReportTemplate,
   ReportSummary,
   Task,
   ViewId,
@@ -25,10 +27,15 @@ type Props = {
   entries: JournalEntry[];
   members: Member[];
   reports: ReportSummary[];
+  reportTemplates?: ReportTemplate[];
+  issues?: ProjectIssue[];
   navigate: (view: ViewId) => void;
   metrics: { overall: number; active: number };
   ensureReport: (date: string) => Promise<void>;
   approveReport: (date: string) => Promise<void>;
+  transitionReport: (reportId: string, status: ReportSummary["status"], note?: string) => Promise<void>;
+  saveReportTemplate: (template: ReportTemplate) => Promise<void>;
+  generateReportSummary: (reportId: string, date: string) => Promise<string>;
   setToast: (value: string) => void;
 };
 const longDate = (value: string) =>
@@ -48,7 +55,11 @@ export function Reports({
   metrics,
   navigate,
   ensureReport,
-  approveReport,
+  transitionReport,
+  saveReportTemplate,
+  generateReportSummary,
+  reportTemplates = [],
+  issues = [],
   setToast,
 }: Props) {
   const reportDates = useMemo(
@@ -58,12 +69,33 @@ export function Reports({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [openingDate, setOpeningDate] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState<"draft" | "review" | "approved" | "sent" | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [generatingSummary, setGeneratingSummary] = useState(false);
+  const defaultTemplate: ReportTemplate = {
+    id: "",
+    name: "Padrão Everlenz",
+    isDefault: true,
+    showSummary: true,
+    showPhotos: true,
+    showGantt: true,
+    showSCurve: true,
+    showAttention: true,
+    photoSize: "large",
+    compact: false,
+  };
+  const activeTemplate = reportTemplates.find((item) => item.isDefault) ?? reportTemplates[0] ?? defaultTemplate;
+  const [templateDraft, setTemplateDraft] = useState<ReportTemplate>(activeTemplate);
   const reportEntries = entries.filter((entry) => entry.date === selectedDate);
   const photos = reportEntries.flatMap((entry) =>
     entry.photos.map((photo) => ({ photo: photo.url, entry })),
   );
   const selectedStatus =
     reports.find((report) => report.date === selectedDate)?.status ?? "review";
+  const selectedReport = reports.find((report) => report.date === selectedDate);
+  const openIssues = issues.filter((issue) => issue.status !== "resolved");
+  const reportCurve = buildReportCurve(project, tasks, entries, selectedDate);
   const ganttDays = Math.max(
     1,
     Math.round((dateValue(project.end) - dateValue(project.start)) / dayMs) + 1,
@@ -85,6 +117,7 @@ export function Reports({
 
   const statusLabel = (date: string) => {
     const status = reports.find((report) => report.date === date)?.status;
+    if (status === "draft") return "Rascunho";
     if (status === "approved") return "Aprovado";
     if (status === "sent") return "Enviado";
     return "Em revisão";
@@ -106,19 +139,44 @@ export function Reports({
     }
   }
 
-  async function handleApprove() {
-    if (!selectedDate || selectedStatus === "approved") return;
+  async function handleTransition() {
+    if (!selectedReport || !reviewOpen) return;
     setApproving(true);
     try {
-      await approveReport(selectedDate);
+      await transitionReport(selectedReport.id, reviewOpen, reviewNote.trim() || undefined);
+      setReviewOpen(null);
+      setReviewNote("");
     } catch (cause) {
-      setToast(
-        cause instanceof Error
-          ? cause.message
-          : "Não foi possível aprovar o relatório.",
-      );
+      setToast(cause instanceof Error ? cause.message : "Não foi possível atualizar o fluxo do relatório.");
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function handleTemplateSave(event: React.FormEvent) {
+    event.preventDefault();
+    setApproving(true);
+    try {
+      await saveReportTemplate({ ...templateDraft, isDefault: true });
+      setTemplateOpen(false);
+      setToast("Modelo padrão do relatório atualizado.");
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "Não foi possível salvar o modelo.");
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleGenerateSummary() {
+    if (!selectedDate || !selectedReport) return;
+    setGeneratingSummary(true);
+    try {
+      await generateReportSummary(selectedReport.id, selectedDate);
+      setToast("Resumo executivo atualizado.");
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "Não foi possível gerar o resumo.");
+    } finally {
+      setGeneratingSummary(false);
     }
   }
 
@@ -332,16 +390,19 @@ export function Reports({
             </span>
           </div>
         </div>
-        <button
-          className="primary-btn"
-          disabled={openingDate !== null}
-          onClick={() => void openReport(reportDates[0])}
-        >
-          {openingDate === reportDates[0]
-            ? "Preparando..."
-            : "Revisar o mais recente"}{" "}
-          <Icon name="arrow" />
-        </button>
+        <div className="report-builder-actions">
+          <button className="secondary-btn" onClick={() => { setTemplateDraft(activeTemplate); setTemplateOpen(true); }}>
+            <Icon name="settings" /> Modelo
+          </button>
+          <button
+            className="primary-btn"
+            disabled={openingDate !== null}
+            onClick={() => void openReport(reportDates[0])}
+          >
+            {openingDate === reportDates[0] ? "Preparando..." : "Revisar o mais recente"}{" "}
+            <Icon name="arrow" />
+          </button>
+        </div>
       </section>
 
       <section className="panel glass reports-panel">
@@ -461,17 +522,28 @@ export function Reports({
                     <strong>{photos.length}</strong>
                   </div>
                 </div>
-                <section>
-                  <h3>Resumo do dia</h3>
+                {activeTemplate.showSummary && <section className="report-executive-summary">
+                  <div className="report-section-heading"><h3>Resumo executivo</h3><button className="secondary-btn compact no-print" disabled={generatingSummary || !selectedReport} onClick={() => void handleGenerateSummary()}><Icon name="spark"/>{generatingSummary ? " Gerando..." : " Gerar resumo inteligente"}</button></div>
                   <p>
-                    Foram realizados {reportEntries.length} registros em{" "}
+                    {selectedReport?.executiveSummary ?? <>Foram realizados {reportEntries.length} registros em{" "}
                     {new Set(reportEntries.map((entry) => entry.taskId)).size}{" "}
                     atividades do cronograma. Cada medição abaixo está vinculada
                     às respectivas evidências de campo e já foi incorporada ao
-                    avanço geral da obra.
+                    avanço geral da obra.</>}
                   </p>
-                </section>
-                <section>
+                </section>}
+                {activeTemplate.showAttention && openIssues.length > 0 && <section className="report-attention-section">
+                  <h3>Pontos de atenção</h3>
+                  <div className="report-update-list">
+                    {openIssues.slice(0, 6).map((issue) => <article key={issue.id}><span>!</span><div><strong>{issue.title}</strong><small>{issue.category} · {issue.priority}</small><p>{issue.description}</p></div></article>)}
+                  </div>
+                </section>}
+                {activeTemplate.showSCurve && <section className="report-curve-section">
+                  <h3>Curva S · planejado × realizado</h3>
+                  <svg viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Curva S do projeto"><g><line x1="0" y1="5" x2="600" y2="5"/><line x1="0" y1="75" x2="600" y2="75"/><line x1="0" y1="145" x2="600" y2="145"/></g><polyline className="planned" points={reportCurve.map((point,index)=>`${index/(reportCurve.length-1)*600},${145-point.planned*1.4}`).join(" ")}/><polyline className="actual" points={reportCurve.map((point,index)=>point.actual === null ? null : `${index/(reportCurve.length-1)*600},${145-point.actual*1.4}`).filter(Boolean).join(" ")}/></svg>
+                  <footer><span>{project.start.split("-").reverse().join("/")}</span><b>Planejado</b><b>Realizado</b><span>{project.end.split("-").reverse().join("/")}</span></footer>
+                </section>}
+                {activeTemplate.showPhotos && <section>
                   <h3>Serviços executados e evidências</h3>
                   <div className="report-activity-blocks">
                     {reportEntries.map((entry) => {
@@ -498,7 +570,7 @@ export function Reports({
                             </b>
                           </header>
                           {entry.photos.length > 0 && (
-                            <div className="preview-photos activity-photos">
+                            <div className={`preview-photos activity-photos photos-${activeTemplate.photoSize}`}>
                               {entry.photos.map((photo, index) => (
                                 <article
                                   key={photo.id ?? `${entry.id}-${index}`}
@@ -523,13 +595,13 @@ export function Reports({
                       );
                     })}
                   </div>
-                </section>
+                </section>}
                 <footer>
                   Gerado por Em Dia · by Everlenz · Informação técnica com
                   evidência de campo
                 </footer>
               </div>
-              {ganttPage("report-gantt-screen")}
+              {activeTemplate.showGantt && ganttPage("report-gantt-screen")}
               <div className="preview-actions">
                 <button
                   className="secondary-btn"
@@ -537,24 +609,53 @@ export function Reports({
                 >
                   <Icon name="download" /> Exportar PDF
                 </button>
-                <button
-                  className="primary-btn"
-                  disabled={approving || selectedStatus === "approved"}
-                  onClick={() => void handleApprove()}
-                >
-                  <Icon name="share" />{" "}
-                  {selectedStatus === "approved"
-                    ? "Relatório aprovado"
-                    : approving
-                      ? "Aprovando..."
-                      : "Aprovar relatório"}
-                </button>
+                {selectedStatus === "draft" && <button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("review")}><Icon name="share" /> Enviar para revisão</button>}
+                {selectedStatus === "review" && <><button className="secondary-btn" disabled={approving} onClick={() => setReviewOpen("draft")}>Devolver</button><button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("approved")}><Icon name="check" /> Aprovar relatório</button></>}
+                {selectedStatus === "approved" && <button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("sent")}><Icon name="share" /> Marcar como enviado</button>}
+                {selectedStatus === "sent" && <button className="secondary-btn" disabled>Relatório enviado</button>}
               </div>
             </div>
           </Modal>
-          {createPortal(ganttPage("report-gantt-print"), document.body)}
+          {activeTemplate.showGantt && createPortal(ganttPage("report-gantt-print"), document.body)}
         </>
       )}
+      {templateOpen && <Modal title="Modelo do status report" subtitle="A identidade visual permanece fixa; escolha o conteúdo e a densidade do documento." onClose={() => !approving && setTemplateOpen(false)}>
+        <form className="invite-form report-template-form" onSubmit={handleTemplateSave}>
+          <label><span>Nome do modelo</span><input value={templateDraft.name} onChange={(event) => setTemplateDraft({ ...templateDraft, name: event.target.value })} required /></label>
+          <div className="template-options">
+            {([['showSummary','Resumo executivo'],['showPhotos','Fotos e medições'],['showGantt','Gantt completo'],['showSCurve','Curva S'],['showAttention','Pontos de atenção']] as const).map(([key,label]) => <label key={key}><input type="checkbox" checked={templateDraft[key]} onChange={(event) => setTemplateDraft({ ...templateDraft, [key]: event.target.checked })}/><span>{label}</span></label>)}
+          </div>
+          <label><span>Tamanho das fotos</span><select value={templateDraft.photoSize} onChange={(event) => setTemplateDraft({ ...templateDraft, photoSize: event.target.value as "medium" | "large" })}><option value="large">Grande — foco na evidência</option><option value="medium">Médio — mais fotos por página</option></select></label>
+          <label className="switch-line"><input type="checkbox" checked={templateDraft.compact} onChange={(event) => setTemplateDraft({ ...templateDraft, compact: event.target.checked })}/><span><strong>Documento compacto</strong><small>Reduz espaços para relatórios extensos.</small></span></label>
+          <div className="modal-actions"><button type="button" className="secondary-btn" onClick={() => setTemplateOpen(false)}>Cancelar</button><button className="primary-btn" disabled={approving}>{approving && <span className="button-spinner"/>}{approving ? "Salvando..." : "Salvar modelo"}</button></div>
+        </form>
+      </Modal>}
+      {reviewOpen && <Modal title={reviewOpen === "approved" ? "Aprovar relatório" : reviewOpen === "sent" ? "Confirmar envio" : reviewOpen === "draft" ? "Devolver para ajustes" : "Enviar para revisão"} subtitle="A mudança ficará registrada no histórico de auditoria." onClose={() => !approving && setReviewOpen(null)}>
+        <div className="invite-form"><label><span>Observação (opcional)</span><textarea rows={4} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Registre uma orientação, ressalva ou confirmação..."/></label><div className="modal-actions"><button className="secondary-btn" disabled={approving} onClick={() => setReviewOpen(null)}>Cancelar</button><button className="primary-btn" disabled={approving || !selectedReport} onClick={() => void handleTransition()}>{approving && <span className="button-spinner"/>}{approving ? "Processando..." : "Confirmar"}</button></div></div>
+      </Modal>}
     </div>
   );
+}
+
+function buildReportCurve(project: Project, tasks: Task[], entries: JournalEntry[], selectedDate: string | null) {
+  const day = 86_400_000;
+  const start = dateValue(project.start);
+  const end = dateValue(project.end);
+  const cut = selectedDate ? dateValue(selectedDate) : Date.now();
+  const leaves = tasks.filter((task) => !tasks.some((child) => child.parentId === task.id));
+  const totalWeight = leaves.reduce((sum, task) => sum + task.weight, 0) || 1;
+  return Array.from({ length: 14 }, (_, index) => {
+    const sample = start + ((end - start) * index) / 13;
+    const planned = leaves.reduce((sum, task) => {
+      const taskStart = dateValue(task.plannedStart);
+      const taskEnd = dateValue(task.plannedEnd);
+      const fraction = sample < taskStart ? 0 : sample >= taskEnd ? 1 : (sample - taskStart) / Math.max(day, taskEnd - taskStart);
+      return sum + task.weight * fraction * 100;
+    }, 0) / totalWeight;
+    const actual = sample > cut ? null : leaves.reduce((sum, task) => {
+      const measured = entries.filter((entry) => entry.taskId === task.id && dateValue(entry.date) <= sample).reduce((value, entry) => value + entry.progressAdded, 0);
+      return sum + task.weight * Math.min(100, measured);
+    }, 0) / totalWeight;
+    return { planned: Math.round(planned), actual: actual === null ? null : Math.round(actual) };
+  });
 }

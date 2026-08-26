@@ -1,5 +1,13 @@
 export type ViewId =
-  "overview" | "schedule" | "journal" | "reports" | "team" | "settings";
+  | "overview"
+  | "schedule"
+  | "journal"
+  | "photos"
+  | "inventory"
+  | "alerts"
+  | "reports"
+  | "team"
+  | "settings";
 
 export type Project = {
   id: string;
@@ -52,7 +60,67 @@ export type JournalEntry = {
   author: string;
   weather: string;
   crew: number;
+  teams?: EntryTeam[];
   photos: JournalPhoto[];
+};
+
+export type ProjectTeam = {
+  id: string;
+  name: string;
+  specialty: string;
+  company: string;
+  contact?: string;
+  active: boolean;
+};
+
+export type EntryTeam = {
+  teamId: string;
+  name: string;
+  workers: number;
+};
+
+export type InventoryAllocation = {
+  id: string;
+  taskId: string;
+  planned: number;
+  consumed: number;
+};
+
+export type InventoryItem = {
+  id: string;
+  name: string;
+  category: string;
+  sku?: string;
+  unit: string;
+  quantity: number;
+  minimum: number;
+  leadDays: number;
+  allocations: InventoryAllocation[];
+};
+
+export type ProjectIssue = {
+  id: string;
+  title: string;
+  description: string;
+  category: "schedule" | "stock" | "field" | "quality" | "safety" | "other";
+  priority: "low" | "medium" | "high" | "critical";
+  status: "open" | "monitoring" | "resolved";
+  taskId?: string;
+  dueDate?: string;
+  createdAt: string;
+};
+
+export type ReportTemplate = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  showSummary: boolean;
+  showPhotos: boolean;
+  showGantt: boolean;
+  showSCurve: boolean;
+  showAttention: boolean;
+  photoSize: "medium" | "large";
+  compact: boolean;
 };
 
 export type JournalPhoto = {
@@ -81,6 +149,10 @@ export type ProjectWorkspace = {
   tasks: Task[];
   entries: JournalEntry[];
   members: Member[];
+  projectTeams?: ProjectTeam[];
+  inventory?: InventoryItem[];
+  issues?: ProjectIssue[];
+  reportTemplates?: ReportTemplate[];
   reports?: ReportSummary[];
 };
 
@@ -88,4 +160,6 @@ export type ReportSummary = {
   id: string;
   date: string;
   status: "draft" | "review" | "approved" | "sent";
+  executiveSummary?: string;
+  reviewNote?: string;
 };

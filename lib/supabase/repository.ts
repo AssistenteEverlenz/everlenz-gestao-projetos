@@ -1,9 +1,13 @@
 import type {
+  InventoryItem,
   JournalEntry,
   JournalPhoto,
   Member,
   Project,
+  ProjectIssue,
+  ProjectTeam,
   ProjectWorkspace,
+  ReportTemplate,
   Task,
 } from "@/app/_components/types";
 import { getSupabaseBrowserClient } from "./client";
@@ -96,6 +100,11 @@ export async function loadWorkspaces(userEmail: string) {
         { data: membershipRows, error: membershipError },
         { data: invitationRows, error: invitationError },
         { data: reportRows, error: reportError },
+        { data: projectTeamRows, error: projectTeamError },
+        { data: updateTeamRows, error: updateTeamError },
+        { data: inventoryRows, error: inventoryError },
+        { data: issueRows, error: issueError },
+        { data: templateRows, error: templateError },
       ] = await Promise.all([
         supabase
           .from("project_gantt")
@@ -120,14 +129,44 @@ export async function loadWorkspaces(userEmail: string) {
           .is("accepted_at", null),
         supabase
           .from("status_reports")
-          .select("id,report_date,status")
+          .select("id,report_date,status,executive_summary,review_note")
           .eq("project_id", row.id),
+        supabase
+          .from("project_teams")
+          .select("id,name,company,specialty,contact,active")
+          .eq("project_id", row.id)
+          .eq("active", true)
+          .order("name"),
+        supabase
+          .from("task_update_teams")
+          .select("update_id,team_id,worker_count,project_teams!inner(name,project_id)")
+          .eq("project_teams.project_id", row.id),
+        supabase
+          .from("inventory_items")
+          .select("id,name,category,sku,unit,current_quantity,minimum_quantity,lead_days,inventory_allocations(id,task_id,planned_quantity,consumed_quantity)")
+          .eq("project_id", row.id)
+          .order("name"),
+        supabase
+          .from("project_issues")
+          .select("id,title,description,category,priority,status,task_id,due_date,created_at")
+          .eq("project_id", row.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("report_templates")
+          .select("id,name,is_default,settings")
+          .eq("project_id", row.id)
+          .order("created_at"),
       ]);
       if (taskError) throw taskError;
       if (feedError) throw feedError;
       if (membershipError) throw membershipError;
       if (invitationError) throw invitationError;
       if (reportError) throw reportError;
+      if (projectTeamError) throw projectTeamError;
+      if (updateTeamError) throw updateTeamError;
+      if (inventoryError) throw inventoryError;
+      if (issueError) throw issueError;
+      if (templateError) throw templateError;
 
       const tasks: Task[] = [];
       for (const item of taskRows ?? []) {
@@ -186,6 +225,18 @@ export async function loadWorkspaces(userEmail: string) {
         author: item.author_name,
         weather: item.weather ?? "Não informado",
         crew: item.crew_count,
+        teams: (updateTeamRows ?? [])
+          .filter((team) => team.update_id === item.update_id)
+          .map((team) => {
+            const related = Array.isArray(team.project_teams)
+              ? team.project_teams[0]
+              : team.project_teams;
+            return {
+              teamId: team.team_id,
+              name: related?.name ?? "Equipe",
+              workers: team.worker_count,
+            };
+          }),
         photos: (item.photos ?? [])
           .map((photo: { id: string; storage_path: string }) => ({
             id: photo.id,
@@ -244,10 +295,62 @@ export async function loadWorkspaces(userEmail: string) {
         tasks,
         entries,
         members,
+        projectTeams: (projectTeamRows ?? []).map((team) => ({
+          id: team.id,
+          name: team.name,
+          company: team.company,
+          specialty: team.specialty,
+          contact: team.contact ?? undefined,
+          active: team.active,
+        } satisfies ProjectTeam)),
+        inventory: (inventoryRows ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          sku: item.sku ?? undefined,
+          unit: item.unit,
+          quantity: Number(item.current_quantity),
+          minimum: Number(item.minimum_quantity),
+          leadDays: item.lead_days,
+          allocations: (item.inventory_allocations ?? []).map((allocation) => ({
+            id: allocation.id,
+            taskId: allocation.task_id,
+            planned: Number(allocation.planned_quantity),
+            consumed: Number(allocation.consumed_quantity),
+          })),
+        } satisfies InventoryItem)),
+        issues: (issueRows ?? []).map((issue) => ({
+          id: issue.id,
+          title: issue.title,
+          description: issue.description,
+          category: issue.category,
+          priority: issue.priority,
+          status: issue.status,
+          taskId: issue.task_id ?? undefined,
+          dueDate: issue.due_date ?? undefined,
+          createdAt: issue.created_at,
+        } satisfies ProjectIssue)),
+        reportTemplates: (templateRows ?? []).map((template) => {
+          const settings = (template.settings ?? {}) as Record<string, unknown>;
+          return {
+            id: template.id,
+            name: template.name,
+            isDefault: template.is_default,
+            showSummary: settings.showSummary !== false,
+            showPhotos: settings.showPhotos !== false,
+            showGantt: settings.showGantt !== false,
+            showSCurve: settings.showSCurve !== false,
+            showAttention: settings.showAttention !== false,
+            photoSize: settings.photoSize === "medium" ? "medium" : "large",
+            compact: settings.compact === true,
+          } satisfies ReportTemplate;
+        }),
         reports: (reportRows ?? []).map((report) => ({
           id: report.id,
           date: report.report_date,
           status: report.status,
+          executiveSummary: report.executive_summary ?? undefined,
+          reviewNote: report.review_note ?? undefined,
         })),
       } satisfies ProjectWorkspace;
     }),
@@ -373,6 +476,211 @@ export async function approveRemoteStatusReport(
     .eq("report_date", reportDate)
     .select("id")
     .single();
+  if (error) throw error;
+}
+
+export async function transitionRemoteStatusReport(
+  reportId: string,
+  status: "draft" | "review" | "approved" | "sent",
+  note?: string,
+) {
+  const { error } = await getSupabaseBrowserClient().rpc(
+    "transition_status_report",
+    { p_report_id: reportId, p_status: status, p_note: note ?? null },
+  );
+  if (error) throw error;
+}
+
+export async function saveRemoteReportSummary(reportId: string, summary: string) {
+  const { error } = await getSupabaseBrowserClient()
+    .from("status_reports")
+    .update({ executive_summary: summary })
+    .eq("id", reportId);
+  if (error) throw error;
+}
+
+export async function generateRemoteReportSummary(payload: Record<string, unknown>) {
+  const { data } = await getSupabaseBrowserClient().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sessão inválida. Entre novamente.");
+  const response = await fetch("/api/report-summary", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json() as { summary?: string; error?: string };
+  if (!response.ok || !result.summary) throw new Error(result.error ?? "Não foi possível gerar o resumo.");
+  return result.summary;
+}
+
+export async function saveRemoteProjectTeam(
+  projectId: string,
+  team: ProjectTeam,
+) {
+  const supabase = getSupabaseBrowserClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const payload = {
+    project_id: projectId,
+    name: team.name,
+    company: team.company,
+    specialty: team.specialty,
+    contact: team.contact ?? null,
+    active: team.active,
+  };
+  const query = team.id
+    ? supabase.from("project_teams").update(payload).eq("id", team.id)
+    : supabase.from("project_teams").insert({
+        ...payload,
+        created_by: userData.user?.id,
+      });
+  const { error } = await query;
+  if (error) throw error;
+}
+
+export async function deleteRemoteProjectTeam(teamId: string) {
+  const { error } = await getSupabaseBrowserClient()
+    .from("project_teams")
+    .update({ active: false })
+    .eq("id", teamId);
+  if (error) throw error;
+}
+
+export async function saveRemoteInventoryItem(
+  projectId: string,
+  item: InventoryItem,
+) {
+  const supabase = getSupabaseBrowserClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const payload = {
+    project_id: projectId,
+    name: item.name,
+    category: item.category,
+    sku: item.sku ?? null,
+    unit: item.unit,
+    current_quantity: item.quantity,
+    minimum_quantity: item.minimum,
+    lead_days: item.leadDays,
+  };
+  const { data, error } = item.id
+    ? await supabase
+        .from("inventory_items")
+        .update(payload)
+        .eq("id", item.id)
+        .select("id")
+        .single()
+    : await supabase
+        .from("inventory_items")
+        .insert({ ...payload, created_by: userData.user?.id })
+        .select("id")
+        .single();
+  if (error) throw error;
+  const itemId = data.id as string;
+  const { error: removeError } = await supabase
+    .from("inventory_allocations")
+    .delete()
+    .eq("item_id", itemId);
+  if (removeError) throw removeError;
+  if (item.allocations.length) {
+    const { error: allocationError } = await supabase
+      .from("inventory_allocations")
+      .insert(
+        item.allocations.map((allocation) => ({
+          item_id: itemId,
+          task_id: allocation.taskId,
+          planned_quantity: allocation.planned,
+          consumed_quantity: allocation.consumed,
+        })),
+      );
+    if (allocationError) throw allocationError;
+  }
+  return itemId;
+}
+
+export async function moveRemoteInventory(
+  itemId: string,
+  type: "entry" | "exit" | "adjustment",
+  quantity: number,
+  taskId?: string,
+  note?: string,
+) {
+  const { data, error } = await getSupabaseBrowserClient().rpc(
+    "move_inventory",
+    {
+      p_item_id: itemId,
+      p_type: type,
+      p_quantity: quantity,
+      p_task_id: taskId ?? null,
+      p_note: note ?? null,
+    },
+  );
+  if (error) throw error;
+  return Number(data);
+}
+
+export async function deleteRemoteInventoryItem(itemId: string) {
+  const { error } = await getSupabaseBrowserClient()
+    .from("inventory_items")
+    .delete()
+    .eq("id", itemId);
+  if (error) throw error;
+}
+
+export async function saveRemoteIssue(projectId: string, issue: ProjectIssue) {
+  const supabase = getSupabaseBrowserClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const payload = {
+    project_id: projectId,
+    title: issue.title,
+    description: issue.description,
+    category: issue.category,
+    priority: issue.priority,
+    status: issue.status,
+    task_id: issue.taskId ?? null,
+    due_date: issue.dueDate ?? null,
+    resolved_at: issue.status === "resolved" ? new Date().toISOString() : null,
+  };
+  const query = issue.id
+    ? supabase.from("project_issues").update(payload).eq("id", issue.id)
+    : supabase.from("project_issues").insert({
+        ...payload,
+        created_by: userData.user?.id,
+      });
+  const { error } = await query;
+  if (error) throw error;
+}
+
+export async function saveRemoteReportTemplate(
+  projectId: string,
+  template: ReportTemplate,
+) {
+  const supabase = getSupabaseBrowserClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (template.isDefault)
+    await supabase
+      .from("report_templates")
+      .update({ is_default: false })
+      .eq("project_id", projectId);
+  const payload = {
+    project_id: projectId,
+    name: template.name,
+    is_default: template.isDefault,
+    settings: {
+      showSummary: template.showSummary,
+      showPhotos: template.showPhotos,
+      showGantt: template.showGantt,
+      showSCurve: template.showSCurve,
+      showAttention: template.showAttention,
+      photoSize: template.photoSize,
+      compact: template.compact,
+    },
+  };
+  const query = template.id
+    ? supabase.from("report_templates").update(payload).eq("id", template.id)
+    : supabase.from("report_templates").insert({
+        ...payload,
+        created_by: userData.user?.id,
+      });
+  const { error } = await query;
   if (error) throw error;
 }
 
@@ -607,7 +915,7 @@ export async function recordRemoteEntry(
     files,
   );
   const supabase = getSupabaseBrowserClient();
-  const { error } = await supabase.rpc("record_daily_progress", {
+  const { data: updateId, error } = await supabase.rpc("record_daily_progress", {
     p_project_id: workspace.project.id,
     p_task_id: entry.taskId,
     p_log_date: entry.date,
@@ -623,6 +931,16 @@ export async function recordRemoteEntry(
       .from("worksite-photos")
       .remove(uploaded.map((item) => item.storage_path));
     throw error;
+  }
+  if (entry.teams?.length && updateId) {
+    const { error: teamError } = await supabase.from("task_update_teams").insert(
+      entry.teams.map((team) => ({
+        update_id: updateId,
+        team_id: team.teamId,
+        worker_count: team.workers,
+      })),
+    );
+    if (teamError) throw teamError;
   }
 }
 
@@ -667,6 +985,21 @@ export async function updateRemoteEntry(
     (data as { deleted_paths?: string[] } | null)?.deleted_paths ?? [];
   if (deletedPaths.length)
     await supabase.storage.from("worksite-photos").remove(deletedPaths);
+  const { error: removeTeamError } = await supabase
+    .from("task_update_teams")
+    .delete()
+    .eq("update_id", entry.id);
+  if (removeTeamError) throw removeTeamError;
+  if (entry.teams?.length) {
+    const { error: teamError } = await supabase.from("task_update_teams").insert(
+      entry.teams.map((team) => ({
+        update_id: entry.id,
+        team_id: team.teamId,
+        worker_count: team.workers,
+      })),
+    );
+    if (teamError) throw teamError;
+  }
 }
 
 export async function deleteRemoteEntry(entryId: string) {

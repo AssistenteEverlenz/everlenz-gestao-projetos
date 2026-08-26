@@ -11,9 +11,13 @@ Domínio da versão de teste: `emdia.everlenz.com.br`.
 - Gantt com EAP, itens pai, quatro tipos de dependência, espera, datas, linha de
   base, responsáveis, pesos, cores, marcos e caminho crítico;
 - diário mobile-first com múltiplas fotos, vínculo obrigatório à atividade,
-  descrição, efetivo, clima e medição do percentual executado no dia;
+  assistente em cinco etapas, ditado, equipes de campo, clima e medição do percentual executado no dia;
 - atualização rastreável da atividade e dos itens pai ao salvar o diário;
-- status report diário com todos os lançamentos, fotos, medições e Gantt completo;
+- galeria por EAP, acesso ao diário e relatório fotográfico em lote;
+- estoque com reservas por EAP, consumo e alertas de reposição;
+- status report com aprovação auditável, resumo executivo, Curva S, fotos e Gantt completo;
+- central de atenção para atrasos, suprimentos, relatórios e ocorrências;
+- equipes operacionais por empresa e especialidade;
 - equipe com papéis e convite simulado;
 - temas claro e escuro com visual liquid glass;
 - menu lateral que recolhe após 400 ms e expande ao receber o cursor;

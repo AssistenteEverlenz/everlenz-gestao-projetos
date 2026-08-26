@@ -12,10 +12,14 @@ import {
 } from "./auth";
 import { Icon, type IconName } from "./icons";
 import type {
+  InventoryItem,
   JournalEntry,
   Member,
   Project,
+  ProjectIssue,
+  ProjectTeam,
   ProjectWorkspace,
+  ReportTemplate,
   Task,
   ViewId,
 } from "./types";
@@ -30,6 +34,9 @@ import { Journal } from "./views/journal";
 import { Reports } from "./views/reports";
 import { Team } from "./views/team";
 import { Settings } from "./views/settings";
+import { Photos } from "./views/photos";
+import { Inventory } from "./views/inventory";
+import { Alerts } from "./views/alerts";
 import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
@@ -54,6 +61,16 @@ import {
   updateRemoteTaskDates,
   updateRemoteTask,
   updateRemoteTaskProgress,
+  deleteRemoteInventoryItem,
+  deleteRemoteProjectTeam,
+  moveRemoteInventory,
+  saveRemoteInventoryItem,
+  saveRemoteIssue,
+  saveRemoteProjectTeam,
+  saveRemoteReportTemplate,
+  saveRemoteReportSummary,
+  generateRemoteReportSummary,
+  transitionRemoteStatusReport,
 } from "@/lib/supabase/repository";
 
 const nav: Array<{ id: ViewId; label: string; short: string; icon: IconName }> =
@@ -66,6 +83,8 @@ const nav: Array<{ id: ViewId; label: string; short: string; icon: IconName }> =
       short: "Diário",
       icon: "journal",
     },
+    { id: "photos", label: "Galeria da obra", short: "Fotos", icon: "camera" },
+    { id: "inventory", label: "Estoque", short: "Estoque", icon: "building" },
     {
       id: "reports",
       label: "Status reports",
@@ -95,6 +114,21 @@ const titles: Record<
     title: "Diário de obra",
     description:
       "Registre evidências e meça o avanço diretamente nas atividades do Gantt.",
+  },
+  photos: {
+    eyebrow: "EVIDÊNCIAS DA EXECUÇÃO",
+    title: "Galeria da obra",
+    description: "Localize, relacione e reúna as evidências fotográficas por EAP.",
+  },
+  inventory: {
+    eyebrow: "SUPRIMENTOS E PLANEJAMENTO",
+    title: "Estoque da obra",
+    description: "Controle saldos e antecipe reposições conforme a necessidade das EAPs.",
+  },
+  alerts: {
+    eyebrow: "GESTÃO PREVENTIVA",
+    title: "Central de atenção",
+    description: "Acompanhe riscos de prazo, estoque, relatórios e ocorrências do campo.",
   },
   reports: {
     eyebrow: "COMUNICAÇÃO COM O CLIENTE",
@@ -284,8 +318,17 @@ export function Workspace() {
       "project_invitations",
       "tasks",
       "daily_logs",
+      "task_updates",
       "update_photos",
       "status_reports",
+      "project_teams",
+      "task_update_teams",
+      "inventory_items",
+      "inventory_allocations",
+      "inventory_movements",
+      "project_issues",
+      "report_templates",
+      "status_report_events",
     ];
     let channel = supabase.channel(`emdia-live-${authUser.id}`);
     for (const table of tables) {
@@ -646,6 +689,102 @@ export function Workspace() {
     updateMembersInAccount((current) => current.filter((item) => item.id !== member.id));
   }
 
+  async function saveProjectTeam(team: ProjectTeam) {
+    if (!workspace) return;
+    const persisted = { ...team, id: team.id || crypto.randomUUID() };
+    if (remoteMode) {
+      await saveRemoteProjectTeam(workspace.project.id, team);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, projectTeams: team.id ? (current.projectTeams ?? []).map((item) => item.id === team.id ? persisted : item) : [...(current.projectTeams ?? []), persisted] }));
+    setToast("Equipe operacional salva.");
+  }
+
+  async function deleteProjectTeam(team: ProjectTeam) {
+    if (!workspace) return;
+    if (remoteMode) await deleteRemoteProjectTeam(team.id);
+    updateCurrent((current) => ({ ...current, projectTeams: (current.projectTeams ?? []).filter((item) => item.id !== team.id) }));
+    setToast("Equipe operacional removida.");
+  }
+
+  async function saveInventoryItem(item: InventoryItem) {
+    if (!workspace) return;
+    const persisted = { ...item, id: item.id || crypto.randomUUID() };
+    if (remoteMode) {
+      await saveRemoteInventoryItem(workspace.project.id, item);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, inventory: item.id ? (current.inventory ?? []).map((currentItem) => currentItem.id === item.id ? persisted : currentItem) : [...(current.inventory ?? []), persisted] }));
+    setToast("Material e reservas atualizados.");
+  }
+
+  async function moveInventoryItem(itemId: string, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, note?: string) {
+    if (!workspace) return;
+    if (remoteMode) {
+      await moveRemoteInventory(itemId, type, quantity, taskId, note);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
+      if (item.id !== itemId) return item;
+      const nextQuantity = type === "entry" ? item.quantity + quantity : type === "exit" ? item.quantity - quantity : quantity;
+      return { ...item, quantity: Math.max(0, nextQuantity), allocations: type === "exit" && taskId ? item.allocations.map((allocation) => allocation.taskId === taskId ? { ...allocation, consumed: Math.min(allocation.planned, allocation.consumed + quantity) } : allocation) : item.allocations };
+    }) }));
+    setToast("Movimentação registrada no estoque.");
+  }
+
+  async function deleteInventoryItem(item: InventoryItem) {
+    if (!workspace) return;
+    if (remoteMode) await deleteRemoteInventoryItem(item.id);
+    updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).filter((currentItem) => currentItem.id !== item.id) }));
+    setToast("Material removido do estoque.");
+  }
+
+  async function saveIssue(issue: ProjectIssue) {
+    if (!workspace) return;
+    const persisted = { ...issue, id: issue.id || crypto.randomUUID() };
+    if (remoteMode) {
+      await saveRemoteIssue(workspace.project.id, issue);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, issues: issue.id ? (current.issues ?? []).map((item) => item.id === issue.id ? persisted : item) : [persisted, ...(current.issues ?? [])] }));
+    setToast(issue.status === "resolved" ? "Ocorrência resolvida." : "Ponto de atenção registrado.");
+  }
+
+  async function saveReportTemplate(template: ReportTemplate) {
+    if (!workspace) return;
+    const persisted = { ...template, id: template.id || crypto.randomUUID() };
+    if (remoteMode) {
+      await saveRemoteReportTemplate(workspace.project.id, template);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, reportTemplates: template.id ? (current.reportTemplates ?? []).map((item) => item.id === template.id ? persisted : item) : [...(current.reportTemplates ?? []), persisted] }));
+    setToast("Modelo de relatório atualizado.");
+  }
+
+  async function transitionReport(reportId: string, status: "draft" | "review" | "approved" | "sent", note?: string) {
+    if (!workspace) return;
+    if (remoteMode) await transitionRemoteStatusReport(reportId, status, note);
+    updateCurrent((current) => ({ ...current, reports: (current.reports ?? []).map((report) => report.id === reportId ? { ...report, status, reviewNote: note } : report) }));
+    setToast(status === "approved" ? "Relatório aprovado e bloqueado." : status === "draft" ? "Relatório devolvido para correção." : "Status do relatório atualizado.");
+  }
+
+  async function generateReportSummary(reportId: string, reportDate: string) {
+    if (!workspace) return "";
+    const daily = workspace.entries.filter((entry) => entry.date === reportDate);
+    const payload = {
+      projectId: workspace.project.id,
+      project: workspace.project.name,
+      date: reportDate,
+      overall: metrics.overall,
+      entries: daily.map((entry) => {
+        const task = workspace.tasks.find((item) => item.id === entry.taskId);
+        return { eap: task?.code ?? "—", activity: task?.name ?? "Atividade", title: entry.title, description: entry.description, progress: entry.progressAdded };
+      }),
+      alerts: (workspace.issues ?? []).filter((issue) => issue.status !== "resolved").map((issue) => ({ title: issue.title, description: issue.description, priority: issue.priority })),
+    };
+    const summary = remoteMode
+      ? await generateRemoteReportSummary(payload)
+      : `${workspace.project.name} apresenta avanço físico geral de ${metrics.overall}%. No período, foram registrados ${daily.length} apontamentos de campo em ${new Set(daily.map((entry) => entry.taskId)).size} atividades.`;
+    if (remoteMode) await saveRemoteReportSummary(reportId, summary);
+    updateCurrent((current) => ({ ...current, reports: (current.reports ?? []).map((report) => report.id === reportId ? { ...report, executiveSummary: summary } : report) }));
+    return summary;
+  }
+
   async function ensureReport(reportDate: string) {
     if (!workspace) return;
     const id = remoteMode
@@ -733,11 +872,21 @@ export function Workspace() {
         tasks: normalizeTaskHierarchy(workspace.tasks),
         entries: workspace.entries,
         members: workspace.members,
+        projectTeams: workspace.projectTeams ?? [],
+        inventory: workspace.inventory ?? [],
+        issues: workspace.issues ?? [],
+        reportTemplates: workspace.reportTemplates ?? [],
         reports: workspace.reports ?? [],
         navigate,
         metrics,
       }
     : null;
+  const attentionCount = workspace
+    ? workspace.tasks.filter((task) => task.progress < 100 && task.plannedEnd < new Date().toISOString().slice(0, 10)).length
+      + (workspace.inventory ?? []).filter((item) => item.quantity <= item.minimum || item.quantity < item.allocations.reduce((sum, allocation) => sum + Math.max(0, allocation.planned - allocation.consumed), 0)).length
+      + (workspace.issues ?? []).filter((issue) => issue.status !== "resolved").length
+      + (workspace.reports ?? []).filter((report) => report.status === "draft" || report.status === "review").length
+    : 0;
 
   if (remoteMode && !authReady) return <LoadingScreen />;
   if (remoteMode && !authUser) return <AuthScreen />;
@@ -914,8 +1063,9 @@ export function Workspace() {
             >
               <Icon name={dark ? "sun" : "moon"} />
             </button>
-            <button className="icon-btn notification" aria-label="Notificações">
+            <button className="icon-btn notification" aria-label="Notificações" onClick={() => workspace && navigate("alerts")}>
               <Icon name="bell" />
+              {attentionCount > 0 && <em>{attentionCount > 9 ? "9+" : attentionCount}</em>}
             </button>
             <button
               className="avatar avatar-dark desktop-avatar"
@@ -956,11 +1106,42 @@ export function Workspace() {
               deleteEntry={deleteEntry}
             />
           )}
+          {workspace && common && view === "photos" && (
+            <Photos
+              project={common.project}
+              tasks={common.tasks}
+              entries={common.entries}
+              navigate={navigate}
+              editEntry={editEntry}
+              deleteEntry={deleteEntry}
+            />
+          )}
+          {workspace && common && view === "inventory" && (
+            <Inventory
+              items={common.inventory}
+              tasks={common.tasks}
+              saveItem={saveInventoryItem}
+              moveItem={moveInventoryItem}
+              deleteItem={deleteInventoryItem}
+            />
+          )}
+          {workspace && common && view === "alerts" && (
+            <Alerts
+              tasks={common.tasks}
+              inventory={common.inventory}
+              reports={common.reports}
+              issues={common.issues}
+              saveIssue={saveIssue}
+            />
+          )}
           {workspace && common && view === "reports" && (
             <Reports
               {...common}
               ensureReport={ensureReport}
               approveReport={approveReport}
+              transitionReport={transitionReport}
+              saveReportTemplate={saveReportTemplate}
+              generateReportSummary={generateReportSummary}
               setToast={setToast}
             />
           )}
@@ -973,6 +1154,8 @@ export function Workspace() {
               updateMember={updateMember}
               resetMemberPassword={resetMemberPassword}
               deleteMember={deleteMember}
+              saveProjectTeam={saveProjectTeam}
+              deleteProjectTeam={deleteProjectTeam}
               setToast={setToast}
             />
           )}
@@ -984,7 +1167,7 @@ export function Workspace() {
 
       {workspace && (
         <nav className="bottom-nav glass" aria-label="Navegação mobile">
-          {nav.slice(0, 4).map((item) => (
+          {nav.filter((item) => ["overview", "schedule", "journal", "reports"].includes(item.id)).map((item) => (
             <button
               key={item.id}
               data-tour={`nav-${item.id}`}
@@ -997,7 +1180,7 @@ export function Workspace() {
           ))}
           <button
             data-tour="nav-team"
-            className={view === "team" || view === "settings" ? "active" : ""}
+            className={["photos", "inventory", "alerts", "team", "settings"].includes(view) ? "active" : ""}
             onClick={() => setMobileMenu(true)}
           >
             <Icon name="more" />
@@ -1008,6 +1191,9 @@ export function Workspace() {
 
       {mobileMenu && <Modal title="Mais opções" subtitle={`${authenticatedMember.name} · ${authenticatedMember.role}`} onClose={() => !signingOut && setMobileMenu(false)}>
         <div className="mobile-more-list">
+          <button onClick={() => { setMobileMenu(false); navigate("photos"); }}><Icon name="camera"/><span><strong>Galeria da obra</strong><small>Fotos e relatórios em lote</small></span><Icon name="chevron"/></button>
+          <button onClick={() => { setMobileMenu(false); navigate("inventory"); }}><Icon name="building"/><span><strong>Estoque</strong><small>Materiais e reservas por EAP</small></span><Icon name="chevron"/></button>
+          <button onClick={() => { setMobileMenu(false); navigate("alerts"); }}><Icon name="alert"/><span><strong>Central de atenção</strong><small>{attentionCount} alertas e ocorrências</small></span><Icon name="chevron"/></button>
           <button onClick={() => { setMobileMenu(false); navigate("team"); }}><Icon name="team"/><span><strong>Equipe</strong><small>Usuários e permissões</small></span><Icon name="chevron"/></button>
           <button onClick={() => { setMobileMenu(false); navigate("settings"); }}><Icon name="settings"/><span><strong>Configurações</strong><small>Tema, senha e preferências</small></span><Icon name="chevron"/></button>
           {remoteMode && <button className="logout-option" disabled={signingOut} onClick={signOut}><Icon name="logout"/><span><strong>{signingOut ? "Saindo..." : "Sair do sistema"}</strong><small>Entrar com outro usuário</small></span>{signingOut && <span className="button-spinner"/>}</button>}

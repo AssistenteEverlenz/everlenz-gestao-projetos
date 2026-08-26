@@ -10,6 +10,11 @@ Execute os arquivos no SQL Editor de um projeto Supabase novo, nesta ordem:
 6. 006_team_invitations.sql
 7. 007_project_deletion_cascade.sql
 8. 008_editable_daily_progress.sql
+9. 009_gantt_hierarchy.sql
+10. 010_work_calendar.sql
+11. 011_team_accounts.sql
+12. 012_realtime.sql
+13. 013_field_operations.sql
 
 O fluxo crítico usa a função record_daily_progress. Ela bloqueia a atividade,
 calcula o percentual final e grava diário, medição e metadados das fotos na mesma
@@ -22,3 +27,8 @@ organization_id/project_id/YYYY-MM-DD/update_uuid/arquivo
 
 Nunca coloque a service_role no navegador ou em variável NEXT_PUBLIC.
 O cliente web usa somente a chave publicável/anon e as políticas RLS.
+
+A migration 013 acrescenta equipes operacionais, estoque e reservas por EAP,
+ocorrências, modelos de relatório, trilha de aprovação e canais Realtime. Ela já
+foi aplicada ao ambiente de teste; em um projeto novo deve ser executada depois
+das migrations anteriores.
