@@ -167,6 +167,8 @@ export function Workspace() {
   const [projectModal, setProjectModal] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspace =
     workspaces.find((item) => item.project.id === projectId) ?? workspaces[0];
@@ -319,6 +321,16 @@ export function Workspace() {
   function navigate(next: ViewId) {
     setView(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function signOut() {
+    if (!remoteMode || signingOut) return;
+    setSigningOut(true);
+    const { error } = await getSupabaseBrowserClient().auth.signOut();
+    if (error) {
+      setSigningOut(false);
+      setToast(error.message);
+    }
   }
 
   function updateTaskProgress(id: string, progress: number) {
@@ -806,14 +818,14 @@ export function Workspace() {
             <Icon name="settings" />
             <span>Configurações</span>
           </button>
-          <div className="user-card">
+          <button className="user-card" onClick={signOut} disabled={!remoteMode || signingOut} title="Sair do sistema">
             <span className="avatar avatar-dark">{authenticatedMember.initials}</span>
             <span>
               <strong>{authenticatedMember.name}</strong>
               <small>{authenticatedMember.role}</small>
             </span>
-            <Icon name="more" />
-          </div>
+            <Icon name="logout" />
+          </button>
         </div>
       </aside>
 
@@ -852,10 +864,8 @@ export function Workspace() {
             </button>
             <button
               className="avatar avatar-dark desktop-avatar"
-              onClick={() =>
-                remoteMode && getSupabaseBrowserClient().auth.signOut()
-              }
-              title={remoteMode ? "Sair" : undefined}
+              onClick={() => setMobileMenu(true)}
+              title="Abrir opções da conta"
             >
               {authenticatedMember.initials}
             </button>
@@ -933,13 +943,21 @@ export function Workspace() {
           <button
             data-tour="nav-team"
             className={view === "team" || view === "settings" ? "active" : ""}
-            onClick={() => navigate("team")}
+            onClick={() => setMobileMenu(true)}
           >
             <Icon name="more" />
             <span>Mais</span>
           </button>
         </nav>
       )}
+
+      {mobileMenu && <Modal title="Mais opções" subtitle={`${authenticatedMember.name} · ${authenticatedMember.role}`} onClose={() => !signingOut && setMobileMenu(false)}>
+        <div className="mobile-more-list">
+          <button onClick={() => { setMobileMenu(false); navigate("team"); }}><Icon name="team"/><span><strong>Equipe</strong><small>Usuários e permissões</small></span><Icon name="chevron"/></button>
+          <button onClick={() => { setMobileMenu(false); navigate("settings"); }}><Icon name="settings"/><span><strong>Configurações</strong><small>Tema, senha e preferências</small></span><Icon name="chevron"/></button>
+          {remoteMode && <button className="logout-option" disabled={signingOut} onClick={signOut}><Icon name="logout"/><span><strong>{signingOut ? "Saindo..." : "Sair do sistema"}</strong><small>Entrar com outro usuário</small></span>{signingOut && <span className="button-spinner"/>}</button>}
+        </div>
+      </Modal>}
 
       {projectModal && (
         <ProjectModal
