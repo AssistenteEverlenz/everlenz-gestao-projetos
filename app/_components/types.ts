@@ -96,6 +96,35 @@ export type InventoryItem = {
   minimum: number;
   leadDays: number;
   allocations: InventoryAllocation[];
+  movements?: InventoryMovement[];
+  requests?: InventoryRequest[];
+};
+
+export type InventoryMovement = {
+  id: string;
+  type: "entry" | "exit" | "adjustment";
+  quantity: number;
+  balanceAfter: number;
+  taskId?: string;
+  purpose: string;
+  receiver?: string;
+  document?: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type InventoryRequest = {
+  id: string;
+  itemId: string;
+  taskId?: string;
+  quantity: number;
+  purpose: string;
+  status: "pending" | "approved" | "rejected" | "fulfilled" | "cancelled";
+  requestedBy: string;
+  requestedAt: string;
+  reviewedBy?: string;
+  fulfilledBy?: string;
+  reviewNote?: string;
 };
 
 export type ProjectIssue = {

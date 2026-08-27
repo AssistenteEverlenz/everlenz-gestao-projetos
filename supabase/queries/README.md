@@ -15,6 +15,7 @@ Execute os arquivos no SQL Editor de um projeto Supabase novo, nesta ordem:
 11. 011_team_accounts.sql
 12. 012_realtime.sql
 13. 013_field_operations.sql
+14. 014_inventory_control.sql
 
 O fluxo crítico usa a função record_daily_progress. Ela bloqueia a atividade,
 calcula o percentual final e grava diário, medição e metadados das fotos na mesma
@@ -32,3 +33,9 @@ A migration 013 acrescenta equipes operacionais, estoque e reservas por EAP,
 ocorrências, modelos de relatório, trilha de aprovação e canais Realtime. Ela já
 foi aplicada ao ambiente de teste; em um projeto novo deve ser executada depois
 das migrations anteriores.
+
+A migration 014 completa o estoque com histórico rastreável, requisições por
+usuário, aprovação e atendimento com baixa atômica, além da importação em lote.
+O modelo público `modelo-importacao-estoque.csv` deve ser validado integralmente
+no cliente antes da chamada da função `import_inventory_items`; a função mantém
+todo o lote em uma única transação e não deixa registros parciais em caso de erro.

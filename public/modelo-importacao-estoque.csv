@@ -1,0 +1,4 @@
+material;categoria;codigo_sku;unidade;saldo_inicial;estoque_minimo;prazo_reposicao_dias;eap;quantidade_prevista
+Cabo flexível 2,5 mm²;Elétrica;ELE-0001;m;500;100;7;1.2.1;350
+Disjuntor bipolar 32 A;Elétrica;ELE-0002;un;24;6;10;1.2.2;18
+Tubo PVC 50 mm;Hidráulica;HID-0001;barra;80;20;5;2.1.1;60

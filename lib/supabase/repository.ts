@@ -1,5 +1,6 @@
 import type {
   InventoryItem,
+  InventoryRequest,
   JournalEntry,
   JournalPhoto,
   Member,
@@ -105,6 +106,8 @@ export async function loadWorkspaces(userEmail: string) {
         { data: inventoryRows, error: inventoryError },
         { data: issueRows, error: issueError },
         { data: templateRows, error: templateError },
+        { data: movementRows, error: movementError },
+        { data: requestRows, error: requestError },
       ] = await Promise.all([
         supabase
           .from("project_gantt")
@@ -156,6 +159,16 @@ export async function loadWorkspaces(userEmail: string) {
           .select("id,name,is_default,settings")
           .eq("project_id", row.id)
           .order("created_at"),
+        supabase
+          .from("inventory_movements")
+          .select("id,item_id,task_id,movement_type,quantity,purpose,receiver_name,document_number,balance_after,created_at,profiles!inventory_movements_created_by_fkey(full_name),inventory_items!inner(project_id)")
+          .eq("inventory_items.project_id", row.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("inventory_requests")
+          .select("id,item_id,task_id,quantity,purpose,status,review_note,requested_at,profiles!inventory_requests_requested_by_fkey(full_name),reviewer:profiles!inventory_requests_reviewed_by_fkey(full_name),fulfiller:profiles!inventory_requests_fulfilled_by_fkey(full_name)")
+          .eq("project_id", row.id)
+          .order("requested_at", { ascending: false }),
       ]);
       if (taskError) throw taskError;
       if (feedError) throw feedError;
@@ -167,6 +180,8 @@ export async function loadWorkspaces(userEmail: string) {
       if (inventoryError) throw inventoryError;
       if (issueError) throw issueError;
       if (templateError) throw templateError;
+      if (movementError) throw movementError;
+      if (requestError) throw requestError;
 
       const tasks: Task[] = [];
       for (const item of taskRows ?? []) {
@@ -318,6 +333,39 @@ export async function loadWorkspaces(userEmail: string) {
             planned: Number(allocation.planned_quantity),
             consumed: Number(allocation.consumed_quantity),
           })),
+          movements: (movementRows ?? []).filter((movement) => movement.item_id === item.id).map((movement) => {
+            const creator = Array.isArray(movement.profiles) ? movement.profiles[0] : movement.profiles;
+            return {
+              id: movement.id,
+              type: movement.movement_type,
+              quantity: Number(movement.quantity),
+              balanceAfter: Number(movement.balance_after),
+              taskId: movement.task_id ?? undefined,
+              purpose: movement.purpose || "Movimentação de estoque",
+              receiver: movement.receiver_name ?? undefined,
+              document: movement.document_number ?? undefined,
+              createdBy: creator?.full_name ?? "Usuário",
+              createdAt: movement.created_at,
+            };
+          }),
+          requests: (requestRows ?? []).filter((request) => request.item_id === item.id).map((request) => {
+            const requester = Array.isArray(request.profiles) ? request.profiles[0] : request.profiles;
+            const reviewer = Array.isArray(request.reviewer) ? request.reviewer[0] : request.reviewer;
+            const fulfiller = Array.isArray(request.fulfiller) ? request.fulfiller[0] : request.fulfiller;
+            return {
+              id: request.id,
+              itemId: request.item_id,
+              taskId: request.task_id ?? undefined,
+              quantity: Number(request.quantity),
+              purpose: request.purpose,
+              status: request.status,
+              requestedBy: requester?.full_name ?? "Usuário",
+              requestedAt: request.requested_at,
+              reviewedBy: reviewer?.full_name ?? undefined,
+              fulfilledBy: fulfiller?.full_name ?? undefined,
+              reviewNote: request.review_note ?? undefined,
+            } satisfies InventoryRequest;
+          }),
         } satisfies InventoryItem)),
         issues: (issueRows ?? []).map((issue) => ({
           id: issue.id,
@@ -601,7 +649,9 @@ export async function moveRemoteInventory(
   type: "entry" | "exit" | "adjustment",
   quantity: number,
   taskId?: string,
-  note?: string,
+  purpose?: string,
+  receiver?: string,
+  document?: string,
 ) {
   const { data, error } = await getSupabaseBrowserClient().rpc(
     "move_inventory",
@@ -610,9 +660,63 @@ export async function moveRemoteInventory(
       p_type: type,
       p_quantity: quantity,
       p_task_id: taskId ?? null,
-      p_note: note ?? null,
+      p_purpose: purpose ?? null,
+      p_receiver: receiver ?? null,
+      p_document: document ?? null,
     },
   );
+  if (error) throw error;
+  return Number(data);
+}
+
+export async function createRemoteInventoryRequest(
+  projectId: string,
+  request: Pick<InventoryRequest, "itemId" | "taskId" | "quantity" | "purpose">,
+) {
+  const supabase = getSupabaseBrowserClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const { error } = await supabase.from("inventory_requests").insert({
+    project_id: projectId,
+    item_id: request.itemId,
+    task_id: request.taskId ?? null,
+    quantity: request.quantity,
+    purpose: request.purpose,
+    requested_by: userData.user?.id,
+  });
+  if (error) throw error;
+}
+
+export async function transitionRemoteInventoryRequest(
+  requestId: string,
+  status: InventoryRequest["status"],
+  note?: string,
+  receiver?: string,
+  document?: string,
+) {
+  const { error } = await getSupabaseBrowserClient().rpc("transition_inventory_request", {
+    p_request_id: requestId,
+    p_status: status,
+    p_note: note ?? null,
+    p_receiver: receiver ?? null,
+    p_document: document ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function importRemoteInventoryItems(projectId: string, rows: InventoryItem[]) {
+  const { data, error } = await getSupabaseBrowserClient().rpc("import_inventory_items", {
+    p_project_id: projectId,
+    p_rows: rows.map((item) => ({
+      name: item.name,
+      category: item.category,
+      sku: item.sku,
+      unit: item.unit,
+      quantity: item.quantity,
+      minimum: item.minimum,
+      leadDays: item.leadDays,
+      allocations: item.allocations.map((allocation) => ({ taskId: allocation.taskId, planned: allocation.planned })),
+    })),
+  });
   if (error) throw error;
   return Number(data);
 }

@@ -13,6 +13,7 @@ import {
 import { Icon, type IconName } from "./icons";
 import type {
   InventoryItem,
+  InventoryRequest,
   JournalEntry,
   Member,
   Project,
@@ -64,6 +65,9 @@ import {
   deleteRemoteInventoryItem,
   deleteRemoteProjectTeam,
   moveRemoteInventory,
+  createRemoteInventoryRequest,
+  transitionRemoteInventoryRequest,
+  importRemoteInventoryItems,
   saveRemoteInventoryItem,
   saveRemoteIssue,
   saveRemoteProjectTeam,
@@ -326,6 +330,7 @@ export function Workspace() {
       "inventory_items",
       "inventory_allocations",
       "inventory_movements",
+      "inventory_requests",
       "project_issues",
       "report_templates",
       "status_report_events",
@@ -716,17 +721,54 @@ export function Workspace() {
     setToast("Material e reservas atualizados.");
   }
 
-  async function moveInventoryItem(itemId: string, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, note?: string) {
+  async function moveInventoryItem(itemId: string, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, purpose?: string, receiver?: string, document?: string) {
     if (!workspace) return;
     if (remoteMode) {
-      await moveRemoteInventory(itemId, type, quantity, taskId, note);
+      await moveRemoteInventory(itemId, type, quantity, taskId, purpose, receiver, document);
       setReloadToken((value) => value + 1);
     } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
       if (item.id !== itemId) return item;
       const nextQuantity = type === "entry" ? item.quantity + quantity : type === "exit" ? item.quantity - quantity : quantity;
-      return { ...item, quantity: Math.max(0, nextQuantity), allocations: type === "exit" && taskId ? item.allocations.map((allocation) => allocation.taskId === taskId ? { ...allocation, consumed: Math.min(allocation.planned, allocation.consumed + quantity) } : allocation) : item.allocations };
+      const balance = Math.max(0, nextQuantity);
+      return { ...item, quantity: balance, allocations: type === "exit" && taskId ? item.allocations.map((allocation) => allocation.taskId === taskId ? { ...allocation, consumed: Math.min(allocation.planned, allocation.consumed + quantity) } : allocation) : item.allocations, movements: [{ id: crypto.randomUUID(), type, quantity, balanceAfter: balance, taskId, purpose: purpose || "Movimentação de estoque", receiver, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] };
     }) }));
     setToast("Movimentação registrada no estoque.");
+  }
+
+  async function createInventoryRequest(request: Pick<InventoryRequest, "itemId" | "taskId" | "quantity" | "purpose">) {
+    if (!workspace) return;
+    if (remoteMode) {
+      await createRemoteInventoryRequest(workspace.project.id, request);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => item.id === request.itemId ? { ...item, requests: [{ id: crypto.randomUUID(), ...request, status: "pending", requestedBy: currentUser.name, requestedAt: new Date().toISOString() }, ...(item.requests ?? [])] } : item) }));
+    setToast("Requisição enviada para aprovação.");
+  }
+
+  async function transitionInventoryRequest(requestId: string, status: InventoryRequest["status"], note?: string, receiver?: string, document?: string) {
+    if (!workspace) return;
+    if (remoteMode) {
+      await transitionRemoteInventoryRequest(requestId, status, note, receiver, document);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
+      const request = (item.requests ?? []).find((entry) => entry.id === requestId);
+      if (!request) return item;
+      const balance = status === "fulfilled" ? Math.max(0, item.quantity - request.quantity) : item.quantity;
+      return { ...item, quantity: balance, requests: (item.requests ?? []).map((entry) => entry.id === requestId ? { ...entry, status, reviewNote: note, reviewedBy: currentUser.name, fulfilledBy: status === "fulfilled" ? currentUser.name : entry.fulfilledBy } : entry), movements: status === "fulfilled" ? [{ id: crypto.randomUUID(), type: "exit", quantity: request.quantity, balanceAfter: balance, taskId: request.taskId, purpose: request.purpose, receiver, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] : item.movements };
+    }) }));
+    setToast(status === "fulfilled" ? "Requisição atendida e estoque baixado." : "Requisição atualizada.");
+  }
+
+  async function importInventoryItems(items: InventoryItem[]) {
+    if (!workspace) return 0;
+    if (remoteMode) {
+      const count = await importRemoteInventoryItems(workspace.project.id, items);
+      setReloadToken((value) => value + 1);
+      setToast(`${count} materiais importados com sucesso.`);
+      return count;
+    }
+    updateCurrent((current) => ({ ...current, inventory: [...(current.inventory ?? []), ...items.map((item) => ({ ...item, id: crypto.randomUUID() }))] }));
+    setToast(`${items.length} materiais importados com sucesso.`);
+    return items.length;
   }
 
   async function deleteInventoryItem(item: InventoryItem) {
@@ -884,6 +926,7 @@ export function Workspace() {
   const attentionCount = workspace
     ? workspace.tasks.filter((task) => task.progress < 100 && task.plannedEnd < new Date().toISOString().slice(0, 10)).length
       + (workspace.inventory ?? []).filter((item) => item.quantity <= item.minimum || item.quantity < item.allocations.reduce((sum, allocation) => sum + Math.max(0, allocation.planned - allocation.consumed), 0)).length
+      + (workspace.inventory ?? []).reduce((sum, item) => sum + (item.requests ?? []).filter((request) => request.status === "pending" || request.status === "approved").length, 0)
       + (workspace.issues ?? []).filter((issue) => issue.status !== "resolved").length
       + (workspace.reports ?? []).filter((report) => report.status === "draft" || report.status === "review").length
     : 0;
@@ -1123,6 +1166,9 @@ export function Workspace() {
               saveItem={saveInventoryItem}
               moveItem={moveInventoryItem}
               deleteItem={deleteInventoryItem}
+              createRequest={createInventoryRequest}
+              transitionRequest={transitionInventoryRequest}
+              importItems={importInventoryItems}
             />
           )}
           {workspace && common && view === "alerts" && (
