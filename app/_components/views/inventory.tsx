@@ -7,6 +7,8 @@ import { Modal } from "../ui";
 
 type MovementType = "entry" | "exit" | "adjustment";
 type RequestStatus = InventoryRequest["status"];
+type StockFilter = "all" | "minimum" | "empty" | "shortage" | "requests" | "unallocated";
+type RequestFilter = "open" | "pending" | "approved" | "fulfilled" | "rejected" | "all";
 type Props = {
   items: InventoryItem[];
   tasks: Task[];
@@ -30,17 +32,46 @@ export function Inventory({ items, tasks, saveItem, moveItem, deleteItem, create
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [moving, setMoving] = useState<InventoryItem | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDetailTab, setSelectedDetailTab] = useState<"movements" | "requests">("movements");
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [transitioning, setTransitioning] = useState<{ request: InventoryRequest; status: RequestStatus } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [section, setSection] = useState<"items" | "requests">("items");
   const [search, setSearch] = useState("");
+  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [taskFilter, setTaskFilter] = useState("");
+  const [requestFilter, setRequestFilter] = useState<RequestFilter>("open");
+  const [requestSearch, setRequestSearch] = useState("");
   const [processing, setProcessing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const requesting = items.find((item) => item.id === requestingId) ?? null;
-  const filtered = useMemo(() => items.filter((item) => `${item.name} ${item.category} ${item.sku ?? ""}`.toLowerCase().includes(search.toLowerCase())), [items, search]);
+  const categories = useMemo(() => [...new Set(items.map((item) => item.category))].sort((a, b) => a.localeCompare(b, "pt-BR")), [items]);
+  const filtered = useMemo(() => items.filter((item) => {
+    const demand = remainingDemand(item);
+    const hasOpenRequest = (item.requests ?? []).some((request) => request.status === "pending" || request.status === "approved");
+    const matchesState = stockFilter === "all"
+      || (stockFilter === "minimum" && item.quantity > 0 && item.quantity <= item.minimum)
+      || (stockFilter === "empty" && item.quantity === 0)
+      || (stockFilter === "shortage" && item.quantity < demand)
+      || (stockFilter === "requests" && hasOpenRequest)
+      || (stockFilter === "unallocated" && item.allocations.length === 0);
+    return `${item.name} ${item.category} ${item.sku ?? ""}`.toLowerCase().includes(search.toLowerCase())
+      && (!categoryFilter || item.category === categoryFilter)
+      && (!taskFilter || item.allocations.some((allocation) => allocation.taskId === taskFilter))
+      && matchesState;
+  }), [categoryFilter, items, search, stockFilter, taskFilter]);
   const shortage = items.filter((item) => item.quantity < remainingDemand(item) || item.quantity <= item.minimum);
   const pending = items.reduce((sum, item) => sum + (item.requests ?? []).filter((request) => request.status === "pending" || request.status === "approved").length, 0);
+  const stockCounts: Record<StockFilter, number> = {
+    all: items.length,
+    minimum: items.filter((item) => item.quantity > 0 && item.quantity <= item.minimum).length,
+    empty: items.filter((item) => item.quantity === 0).length,
+    shortage: items.filter((item) => item.quantity < remainingDemand(item)).length,
+    requests: items.filter((item) => (item.requests ?? []).some((request) => request.status === "pending" || request.status === "approved")).length,
+    unallocated: items.filter((item) => item.allocations.length === 0).length,
+  };
 
   return <div className="view-stack inventory-view">
     <section className="inventory-summary glass">
@@ -53,35 +84,70 @@ export function Inventory({ items, tasks, saveItem, moveItem, deleteItem, create
         <button className="primary-btn" onClick={() => setEditing(EMPTY_ITEM)}><Icon name="plus"/> Novo material</button>
       </div>
     </section>
-    <section className="panel glass">
+    <nav className="inventory-main-tabs glass" aria-label="Seções do estoque"><button className={section === "items" ? "active" : ""} onClick={() => setSection("items")}><Icon name="building"/><span>Materiais</span><b>{items.length}</b></button><button className={section === "requests" ? "active" : ""} onClick={() => setSection("requests")}><Icon name="journal"/><span>Requisições</span><b>{pending}</b></button></nav>
+    {section === "items" && <section className="panel glass">
       <div className="panel-header"><div><span className="overline">POSIÇÃO ATUAL</span><h3>Materiais e reservas</h3></div><label className="search-box"><Icon name="search"/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar material..."/></label></div>
+      <div className="inventory-filter-bar">
+        <div className="inventory-filter-chips">{([
+          ["all", "Todos"], ["minimum", "Estoque mínimo"], ["empty", "Sem estoque"], ["shortage", "Reposição necessária"], ["requests", "Com requisição"], ["unallocated", "Sem EAP"],
+        ] as [StockFilter, string][]).map(([value, label]) => <button key={value} className={stockFilter === value ? "active" : ""} onClick={() => setStockFilter(value)}>{label}<b>{stockCounts[value]}</b></button>)}</div>
+        <div className="inventory-filter-selects"><label><span>Categoria</span><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">Todas</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></label><label><span>Atividade / EAP</span><select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}><option value="">Todas</option>{tasks.map((task) => <option key={task.id} value={task.id}>{task.code} · {task.name}</option>)}</select></label>{(stockFilter !== "all" || categoryFilter || taskFilter) && <button className="text-btn" onClick={() => { setStockFilter("all"); setCategoryFilter(""); setTaskFilter(""); }}><Icon name="close"/> Limpar filtros</button>}</div>
+      </div>
       <div className="inventory-table">
         <div className="inventory-row inventory-head"><span>Material</span><span>Saldo</span><span>Reservado</span><span>Disponível</span><span>Situação</span><span>Ações</span></div>
         {filtered.map((item) => {
           const demand = remainingDemand(item); const available = item.quantity - demand;
           const state = item.quantity <= item.minimum ? "Mínimo atingido" : available < 0 ? "Reposição necessária" : "Abastecido";
-          return <div className="inventory-row" key={item.id} role="button" tabIndex={0} onClick={() => setSelectedId(item.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedId(item.id); }}>
+          return <div className="inventory-row" key={item.id} role="button" tabIndex={0} onClick={() => { setSelectedDetailTab("movements"); setSelectedId(item.id); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { setSelectedDetailTab("movements"); setSelectedId(item.id); } }}>
             <span><strong>{item.name}</strong><small>{item.category}{item.sku ? ` · ${item.sku}` : ""}</small></span>
             <b>{item.quantity} {item.unit}</b><b>{demand} {item.unit}</b><b className={available < 0 ? "danger" : ""}>{available} {item.unit}</b>
             <em className={state === "Abastecido" ? "ok" : "warning"}>{state}</em>
             <span className="inventory-actions"><button className="secondary-btn compact" onClick={(event) => { event.stopPropagation(); setMoving(item); }}>Movimentar</button><button className="icon-btn tiny" aria-label={`Editar ${item.name}`} onClick={(event) => { event.stopPropagation(); setEditing(item); }}><Icon name="settings"/></button></span>
           </div>;
         })}
-        {!filtered.length && <div className="inventory-empty"><Icon name="building"/><strong>Nenhum material encontrado</strong><span>Cadastre um material ou importe o modelo preenchido.</span></div>}
+        {!filtered.length && <div className="inventory-empty"><Icon name="filter"/><strong>Nenhum material neste filtro</strong><span>Ajuste os filtros ou limpe a busca para visualizar outros itens.</span></div>}
       </div>
-    </section>
+    </section>}
+    {section === "requests" && <RequestBoard items={items} tasks={tasks} filter={requestFilter} search={requestSearch} onFilter={setRequestFilter} onSearch={setRequestSearch} onNew={() => setRequestingId(items[0]?.id ?? null)} onOpenItem={(itemId) => { setSelectedDetailTab("requests"); setSelectedId(itemId); }} onTransition={setTransitioning}/>}
 
-    {selected && <InventoryDetail item={selected} tasks={tasks} onClose={() => setSelectedId(null)} onMove={() => { setSelectedId(null); setMoving(selected); }} onEdit={() => { setSelectedId(null); setEditing(selected); }} onRequest={() => { setSelectedId(null); setRequestingId(selected.id); }} onTransition={setTransitioning}/>}
+    {selected && <InventoryDetail item={selected} tasks={tasks} initialTab={selectedDetailTab} onClose={() => setSelectedId(null)} onMove={() => { setSelectedId(null); setMoving(selected); }} onEdit={() => { setSelectedId(null); setEditing(selected); }} onRequest={() => { setSelectedId(null); setRequestingId(selected.id); }} onTransition={setTransitioning}/>}
     {editing && <InventoryForm item={editing} tasks={tasks} processing={processing} onClose={() => setEditing(null)} onDelete={editing.id ? async () => { setProcessing(true); try { await deleteItem(editing); setEditing(null); setSelectedId(null); } finally { setProcessing(false); } } : undefined} onSave={async (item) => { setProcessing(true); try { await saveItem(item); setEditing(null); } finally { setProcessing(false); } }}/>}
     {moving && <MovementForm item={moving} tasks={tasks} processing={processing} onClose={() => setMoving(null)} onSave={async (type, quantity, taskId, purpose, receiver, document) => { setProcessing(true); try { await moveItem(moving.id, type, quantity, taskId, purpose, receiver, document); setMoving(null); } finally { setProcessing(false); } }}/>}
-    {requesting && <RequestForm item={requesting} items={items} tasks={tasks} processing={processing} onClose={() => setRequestingId(null)} onChangeItem={setRequestingId} onSave={async (request) => { setProcessing(true); try { await createRequest(request); setRequestingId(null); } finally { setProcessing(false); } }}/>}
+    {requesting && <RequestForm item={requesting} items={items} tasks={tasks} processing={processing} onClose={() => setRequestingId(null)} onChangeItem={setRequestingId} onSave={async (request) => { setProcessing(true); try { await createRequest(request); setRequestingId(null); setSection("requests"); setRequestFilter("open"); } finally { setProcessing(false); } }}/>}
     {transitioning && <TransitionForm data={transitioning} processing={processing} onClose={() => setTransitioning(null)} onSave={async (note, receiver, document) => { setProcessing(true); try { await transitionRequest(transitioning.request.id, transitioning.status, note, receiver, document); setTransitioning(null); } finally { setProcessing(false); } }}/>}
     {importing && <ImportForm existing={items} tasks={tasks} processing={processing} fileRef={fileRef} onClose={() => setImporting(false)} onImport={async (rows) => { setProcessing(true); try { await importItems(rows); setImporting(false); } finally { setProcessing(false); } }}/>}
   </div>;
 }
 
-function InventoryDetail({ item, tasks, onClose, onMove, onEdit, onRequest, onTransition }: { item: InventoryItem; tasks: Task[]; onClose: () => void; onMove: () => void; onEdit: () => void; onRequest: () => void; onTransition: (data: { request: InventoryRequest; status: RequestStatus }) => void }) {
-  const [tab, setTab] = useState<"movements" | "requests">("movements"); const demand = remainingDemand(item);
+function RequestBoard({ items, tasks, filter, search, onFilter, onSearch, onNew, onOpenItem, onTransition }: { items: InventoryItem[]; tasks: Task[]; filter: RequestFilter; search: string; onFilter: (value: RequestFilter) => void; onSearch: (value: string) => void; onNew: () => void; onOpenItem: (itemId: string) => void; onTransition: (data: { request: InventoryRequest; status: RequestStatus }) => void }) {
+  const requests = useMemo(() => items.flatMap((item) => (item.requests ?? []).map((request) => ({ request, item }))).sort((a, b) => b.request.requestedAt.localeCompare(a.request.requestedAt)), [items]);
+  const counts: Record<RequestFilter, number> = {
+    all: requests.length,
+    open: requests.filter(({ request }) => request.status === "pending" || request.status === "approved").length,
+    pending: requests.filter(({ request }) => request.status === "pending").length,
+    approved: requests.filter(({ request }) => request.status === "approved").length,
+    fulfilled: requests.filter(({ request }) => request.status === "fulfilled").length,
+    rejected: requests.filter(({ request }) => request.status === "rejected" || request.status === "cancelled").length,
+  };
+  const visible = requests.filter(({ item, request }) => {
+    const statusMatches = filter === "all" || (filter === "open" ? request.status === "pending" || request.status === "approved" : filter === "rejected" ? request.status === "rejected" || request.status === "cancelled" : request.status === filter);
+    const task = taskName(tasks, request.taskId);
+    return statusMatches && `${item.name} ${item.sku ?? ""} ${request.purpose} ${request.requestedBy} ${task?.code ?? ""} ${task?.name ?? ""}`.toLowerCase().includes(search.toLowerCase());
+  });
+  return <section className="panel glass inventory-request-board">
+    <div className="panel-header"><div><span className="overline">FLUXO DE ATENDIMENTO</span><h3>Requisições de materiais</h3><p>Acompanhe cada solicitação desde o pedido até a entrega e a baixa no estoque.</p></div><div className="request-board-actions"><label className="search-box"><Icon name="search"/><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Buscar requisição..."/></label><button className="primary-btn" disabled={!items.length} onClick={onNew}><Icon name="plus"/> Nova requisição</button></div></div>
+    <div className="request-filter-chips">{([[
+      "open", "Em aberto"], ["pending", "Pendentes"], ["approved", "Aprovadas"], ["fulfilled", "Atendidas"], ["rejected", "Recusadas"], ["all", "Todas"],
+    ] as [RequestFilter, string][]).map(([value, label]) => <button key={value} className={filter === value ? "active" : ""} onClick={() => onFilter(value)}>{label}<b>{counts[value]}</b></button>)}</div>
+    <div className="request-board-list">{visible.map(({ item, request }) => { const task = taskName(tasks, request.taskId); return <article key={request.id} className={`request-board-card ${request.status}`}>
+      <button className="request-card-main" onClick={() => onOpenItem(item.id)}><span className="request-status-mark"><Icon name={request.status === "fulfilled" ? "check" : request.status === "rejected" || request.status === "cancelled" ? "close" : "clock"}/></span><span className="request-card-copy"><span><em className={`request-status ${request.status}`}>{requestLabel[request.status]}</em><time>{formatWhen(request.requestedAt)}</time></span><strong>{item.name} · {request.quantity} {item.unit}</strong><p>{request.purpose}</p><small>Solicitado por <b>{request.requestedBy}</b>{task ? <> · EAP <b>{task.code} · {task.name}</b></> : " · Uso geral da obra"}</small></span></button>
+      <div className="request-card-actions"><button className="secondary-btn compact" onClick={() => onOpenItem(item.id)}>Ver detalhes</button>{request.status === "pending" && <><button className="secondary-btn compact" onClick={() => onTransition({ request, status: "rejected" })}>Recusar</button><button className="primary-btn compact" onClick={() => onTransition({ request, status: "approved" })}>Aprovar</button></>}{request.status === "approved" && <button className="primary-btn compact" onClick={() => onTransition({ request, status: "fulfilled" })}>Atender e baixar</button>}</div>
+    </article>; })}{!visible.length && <div className="inventory-empty"><Icon name="journal"/><strong>Nenhuma requisição neste filtro</strong><span>Altere o status selecionado ou crie uma nova requisição.</span></div>}</div>
+  </section>;
+}
+
+function InventoryDetail({ item, tasks, initialTab, onClose, onMove, onEdit, onRequest, onTransition }: { item: InventoryItem; tasks: Task[]; initialTab: "movements" | "requests"; onClose: () => void; onMove: () => void; onEdit: () => void; onRequest: () => void; onTransition: (data: { request: InventoryRequest; status: RequestStatus }) => void }) {
+  const [tab, setTab] = useState<"movements" | "requests">(initialTab); const demand = remainingDemand(item);
   return <Modal title={item.name} subtitle={`${item.category}${item.sku ? ` · ${item.sku}` : ""}`} onClose={onClose} wide><div className="inventory-detail">
     <div className="inventory-detail-kpis"><span><small>Saldo atual</small><strong>{item.quantity} {item.unit}</strong></span><span><small>Reservado</small><strong>{demand} {item.unit}</strong></span><span><small>Disponível</small><strong>{item.quantity - demand} {item.unit}</strong></span><span><small>Estoque mínimo</small><strong>{item.minimum} {item.unit}</strong></span></div>
     <div className="inventory-detail-actions"><button className="secondary-btn" onClick={onEdit}><Icon name="settings"/> Editar</button><button className="secondary-btn" onClick={onRequest}><Icon name="journal"/> Requisitar</button><button className="primary-btn" onClick={onMove}><Icon name="plus"/> Movimentar</button></div>

@@ -741,7 +741,7 @@ export function Workspace() {
       await createRemoteInventoryRequest(workspace.project.id, request);
       setReloadToken((value) => value + 1);
     } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => item.id === request.itemId ? { ...item, requests: [{ id: crypto.randomUUID(), ...request, status: "pending", requestedBy: currentUser.name, requestedAt: new Date().toISOString() }, ...(item.requests ?? [])] } : item) }));
-    setToast("Requisição enviada para aprovação.");
+    setToast("Requisição criada. Acompanhe em Estoque > Requisições.");
   }
 
   async function transitionInventoryRequest(requestId: string, status: InventoryRequest["status"], note?: string, receiver?: string, document?: string) {
