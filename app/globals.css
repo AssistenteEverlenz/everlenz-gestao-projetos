@@ -889,7 +889,7 @@ html[data-theme="dark"] { color-scheme:dark; }
 
 @media screen and (min-width:768px) {
   body { font-size:16px; }
-  .overline,.header-copy small { font-size:11px; }
+  .overline,.header-copy small { font-size:12px; }
   .header-copy h1 { font-size:27px; }
   .header-copy p { font-size:14px; }
   .primary-btn,.secondary-btn,.text-btn,.toggle-chip,.switch-label,.segmented button { font-size:13px; }
@@ -900,73 +900,109 @@ html[data-theme="dark"] { color-scheme:dark; }
   .modal-note p,.permission-note p { font-size:13px; }
   .panel-header h3,.panel>h3 { font-size:18px; }
   .gantt-quick-filters>button { font-size:12px; }
-  .gantt-quick-filters>button b { font-size:11px; }
-  .gantt-summary span,.task-table-head,.timeline-head { font-size:11px; }
+  .gantt-quick-filters>button b { font-size:12px; }
+  .gantt-summary span,.task-table-head,.timeline-head { font-size:12px; }
   .gantt-summary strong { font-size:15px; }
   .task-row>span:first-child,.task-row>span:nth-child(3) { font-size:12px; }
   .task-row strong,.task-row b { font-size:13px; }
-  .task-row small,.gantt-legend { font-size:11px; }
-  .gantt-bar b { font-size:11px; }
+  .task-row small,.gantt-legend { font-size:12px; }
+  .gantt-bar b { font-size:12px; }
+  .task-journal-count,.mobile-journal-count,.task-eap-cell>b,.parent-progress-note span,
+  .danger-btn.compact,.journal-actions-menu button,.dependency-fields>small,
+  .dependency-lag-field small,.weekday-options strong,.weekday-options small,
+  .task-checks label,.task-detail-grid small { font-size:12px; }
+  .task-detail-grid strong { font-size:13px; }
 
   .notification-preview { width:430px; }
-  .notification-preview>header span { font-size:10px; }
+  .notification-preview>header span { font-size:12px; }
   .notification-preview>header strong { font-size:18px; }
-  .notification-preview-summary span { font-size:11px; }
+  .notification-preview-summary span { font-size:12px; }
   .notification-preview-summary b { font-size:14px; }
   .notification-preview-list { gap:7px; padding:0 11px 11px; }
   .notification-preview-list article { padding:11px; }
-  .notification-preview-list small { font-size:10px; }
+  .notification-preview-list small { font-size:12px; }
   .notification-preview-list strong { font-size:13px; }
-  .notification-preview-list p { font-size:11px; }
+  .notification-preview-list p { font-size:12px; }
   .notification-preview-empty,.notification-preview>button { font-size:12px; }
 
   .project-copy strong,.user-card strong { font-size:13px; }
-  .project-copy small,.user-card small,.sync-state { font-size:11px; }
-  .status-badge { font-size:11px; }
-  .metric-label { font-size:11px; }
+  .sidebar-project-label,.project-switcher small,.project-copy small,.user-card small,.sync-state { font-size:12px; }
+  .status-badge { font-size:12px; }
+  .hero-title-row p,.hero-progress p,.variance,.hero-dates span,.hero-dates strong { font-size:12px; }
+  .hero-progress>div>strong { font-size:13px; }
+  .metric-label { font-size:12px; }
   .metric-hint,.metric-details { font-size:12px; }
   .activity-copy strong { font-size:13px; }
-  .activity-copy p { font-size:11px; }
-  .live-pill { font-size:10px; }
+  .activity-copy p { font-size:12px; }
+  .live-pill { font-size:12px; }
   .mini-timeline strong { font-size:12px; }
-  .mini-timeline small { font-size:11px; }
-  .mini-timeline em { font-size:10px; }
+  .mini-timeline small,.mini-timeline em { font-size:12px; }
   .report-callout p { font-size:12px; }
 
-  .date-navigator span,.task-chip { font-size:10px; }
+  .date-navigator span,.task-chip { font-size:12px; }
   .date-navigator strong { font-size:14px; }
   .day-context { font-size:12px; }
-  .day-divider span { font-size:11px; }
-  .entry-progress span { font-size:11px; }
+  .day-divider span { font-size:12px; }
+  .entry-progress span { font-size:12px; }
   .entry-progress strong { font-size:12px; }
-  .overall-progress-stat>span { font-size:10px; }
-  .overall-progress-stat>small { font-size:11px; }
+  .overall-progress-stat>span,.overall-progress-stat>small { font-size:12px; }
+  .journal-content h3 { font-size:14px; }
+  .journal-content>p,.journal-content footer,.progress-measure small,
+  .daily-stats span,.check-list,.task-history-callout strong,.task-history-callout span,
+  .entry-history-item header span,.entry-history-item header small,.entry-history-item>p,
+  .history-progress small,.history-progress b,.history-photos span,.entry-edit-grid small,
+  .edit-context strong,.edit-context small,.period-segmented button,.week-strip span,
+  .week-strip small,.month-calendar header span,.month-calendar button span { font-size:12px; }
+  .journal-photo>span,.upload-preview span,.upload-grid span,.empty-journal small,
+  .activity-selector small,.measurement-card>div:first-child>span,.measurement-card p,
+  .measurement-equation small,.measurement-card>small,.photo-drop small,.photo-drop em,
+  .save-summary small { font-size:12px; }
+  .photo-drop strong,.save-summary strong { font-size:13px; }
 
-  .photo-eap,.photo-library-image>span { font-size:11px; }
+  .photo-library-toolbar p,.inventory-summary p,.attention-hero p { font-size:13px; }
+  .photo-eap,.photo-library-image>span { font-size:12px; }
   .photo-library-card strong { font-size:14px; }
   .photo-library-card small,.photo-library-card em { font-size:12px; }
-  .photo-library-card footer button { font-size:11px; }
+  .photo-library-card footer button { font-size:12px; }
+  .journal-wizard-steps button,.journal-wizard-steps button b,.team-picker>header p,
+  .team-picker>div label small,.wizard-review-grid span,.wizard-review-grid strong,
+  .wizard-review span,.wizard-review small { font-size:12px; }
 
   .team-summary p { font-size:12px; }
   .member-row { font-size:12px; }
   .member-row strong { font-size:13px; }
-  .member-row small,.member-head { font-size:11px; }
+  .member-row small,.member-head,.operational-teams-panel .panel-header p,
+  .operational-team-grid small,.operational-team-grid em { font-size:12px; }
+  .operational-team-grid strong { font-size:13px; }
 
-  .attention-item small { font-size:10px; }
+  .report-builder p,.builder-chips span,.report-row small { font-size:12px; }
+  .report-row strong { font-size:13px; }
+  .settings-card p,.theme-options button,.setting-toggle strong,.setting-toggle small,
+  .empty-workspace>p,.empty-schedule>p,.empty-workspace-flow span,
+  .gantt-feature-grid span,.toast { font-size:12px; }
+  .access-card>header span,.access-card>p,.access-card label>span,
+  .access-switch,.access-message { font-size:12px; }
+
+  .attention-item small { font-size:12px; }
   .attention-item strong { font-size:13px; }
   .attention-item p { font-size:12px; }
-  .attention-item em { font-size:11px; }
-  .attention-empty small { font-size:11px; }
+  .attention-item em,.attention-empty small,.empty-inline p { font-size:12px; }
+  .curve-legend,.curve-axis,.curve-dates,.switch-line small { font-size:12px; }
 
   .inventory-filter-chips button,.request-filter-chips button { font-size:12px; }
-  .inventory-filter-chips b,.request-filter-chips b { font-size:11px; }
-  .inventory-filter-selects label>span { font-size:11px; }
+  .inventory-filter-chips b,.request-filter-chips b { font-size:12px; }
+  .inventory-filter-selects label>span { font-size:12px; }
   .inventory-filter-selects select { font-size:13px; }
   .inventory-request-board>.panel-header p { font-size:12px; }
-  .request-card-copy time,.request-card-copy small { font-size:11px; }
-  .request-status { font-size:10px; }
+  .request-card-copy time,.request-card-copy small,.request-card-copy p { font-size:12px; }
+  .request-status { font-size:12px; }
   .system-reference strong { font-size:13px; }
-  .system-reference p,.movement-reference>b { font-size:11px; }
-  .field-worker-editor>header span,.field-worker-editor>header p { font-size:11px; }
-  .field-worker-row label>span { font-size:11px; }
+  .system-reference p,.movement-reference>b { font-size:12px; }
+  .field-worker-editor>header span,.field-worker-editor>header p { font-size:12px; }
+  .field-worker-row label>span { font-size:12px; }
+  .inventory-kpis span,.inventory-row small,.inventory-row>em,.inventory-head,
+  .inventory-detail-kpis small,.inventory-allocations header span,.inventory-allocations>div,
+  .inventory-tabs button,.inventory-history time,.inventory-history footer,
+  .inventory-history blockquote,.form-warning,.import-instructions p,.import-dropzone span,
+  .import-result header span,.import-result p,.import-result li,.inventory-main-tabs b { font-size:12px; }
 }
