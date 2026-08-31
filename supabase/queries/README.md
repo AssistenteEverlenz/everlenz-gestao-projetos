@@ -16,6 +16,7 @@ Execute os arquivos no SQL Editor de um projeto Supabase novo, nesta ordem:
 12. 012_realtime.sql
 13. 013_field_operations.sql
 14. 014_inventory_control.sql
+15. 015_stock_receivers.sql
 
 O fluxo crítico usa a função record_daily_progress. Ela bloqueia a atividade,
 calcula o percentual final e grava diário, medição e metadados das fotos na mesma
@@ -39,3 +40,6 @@ usuário, aprovação e atendimento com baixa atômica, além da importação em
 O modelo público `modelo-importacao-estoque.csv` deve ser validado integralmente
 no cliente antes da chamada da função `import_inventory_items`; a função mantém
 todo o lote em uma única transação e não deixa registros parciais em caso de erro.
+
+A migration 015 acrescenta os colaboradores das equipes de campo, destinatários
+rastreáveis para retiradas e a numeração interna automática das movimentações.

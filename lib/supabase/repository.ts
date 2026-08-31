@@ -102,6 +102,7 @@ export async function loadWorkspaces(userEmail: string) {
         { data: invitationRows, error: invitationError },
         { data: reportRows, error: reportError },
         { data: projectTeamRows, error: projectTeamError },
+        { data: projectTeamMemberRows, error: projectTeamMemberError },
         { data: updateTeamRows, error: updateTeamError },
         { data: inventoryRows, error: inventoryError },
         { data: issueRows, error: issueError },
@@ -141,6 +142,12 @@ export async function loadWorkspaces(userEmail: string) {
           .eq("active", true)
           .order("name"),
         supabase
+          .from("project_team_members")
+          .select("id,team_id,name,role,phone,active,project_teams!inner(project_id)")
+          .eq("project_teams.project_id", row.id)
+          .eq("active", true)
+          .order("name"),
+        supabase
           .from("task_update_teams")
           .select("update_id,team_id,worker_count,project_teams!inner(name,project_id)")
           .eq("project_teams.project_id", row.id),
@@ -161,7 +168,7 @@ export async function loadWorkspaces(userEmail: string) {
           .order("created_at"),
         supabase
           .from("inventory_movements")
-          .select("id,item_id,task_id,movement_type,quantity,purpose,receiver_name,document_number,balance_after,created_at,profiles!inventory_movements_created_by_fkey(full_name),inventory_items!inner(project_id)")
+          .select("id,movement_number,item_id,task_id,movement_type,quantity,purpose,receiver_name,receiver_kind,receiver_id,document_number,balance_after,created_at,profiles!inventory_movements_created_by_fkey(full_name),inventory_items!inner(project_id)")
           .eq("inventory_items.project_id", row.id)
           .order("created_at", { ascending: false }),
         supabase
@@ -176,6 +183,7 @@ export async function loadWorkspaces(userEmail: string) {
       if (invitationError) throw invitationError;
       if (reportError) throw reportError;
       if (projectTeamError) throw projectTeamError;
+      if (projectTeamMemberError) throw projectTeamMemberError;
       if (updateTeamError) throw updateTeamError;
       if (inventoryError) throw inventoryError;
       if (issueError) throw issueError;
@@ -317,6 +325,13 @@ export async function loadWorkspaces(userEmail: string) {
           specialty: team.specialty,
           contact: team.contact ?? undefined,
           active: team.active,
+          members: (projectTeamMemberRows ?? []).filter((member) => member.team_id === team.id).map((member) => ({
+            id: member.id,
+            name: member.name,
+            role: member.role ?? undefined,
+            phone: member.phone ?? undefined,
+            active: member.active,
+          })),
         } satisfies ProjectTeam)),
         inventory: (inventoryRows ?? []).map((item) => ({
           id: item.id,
@@ -337,12 +352,15 @@ export async function loadWorkspaces(userEmail: string) {
             const creator = Array.isArray(movement.profiles) ? movement.profiles[0] : movement.profiles;
             return {
               id: movement.id,
+              internalCode: `MOV-${String(movement.movement_number).padStart(6, "0")}`,
               type: movement.movement_type,
               quantity: Number(movement.quantity),
               balanceAfter: Number(movement.balance_after),
               taskId: movement.task_id ?? undefined,
               purpose: movement.purpose || "Movimentação de estoque",
               receiver: movement.receiver_name ?? undefined,
+              receiverKind: movement.receiver_kind ?? undefined,
+              receiverId: movement.receiver_id ?? undefined,
               document: movement.document_number ?? undefined,
               createdBy: creator?.full_name ?? "Usuário",
               createdAt: movement.created_at,
@@ -566,22 +584,16 @@ export async function saveRemoteProjectTeam(
   team: ProjectTeam,
 ) {
   const supabase = getSupabaseBrowserClient();
-  const { data: userData } = await supabase.auth.getUser();
-  const payload = {
-    project_id: projectId,
-    name: team.name,
-    company: team.company,
-    specialty: team.specialty,
-    contact: team.contact ?? null,
-    active: team.active,
-  };
-  const query = team.id
-    ? supabase.from("project_teams").update(payload).eq("id", team.id)
-    : supabase.from("project_teams").insert({
-        ...payload,
-        created_by: userData.user?.id,
-      });
-  const { error } = await query;
+  const { error } = await supabase.rpc("save_project_team", {
+    p_project_id: projectId,
+    p_team_id: team.id || null,
+    p_name: team.name,
+    p_company: team.company,
+    p_specialty: team.specialty,
+    p_contact: team.contact ?? null,
+    p_active: team.active,
+    p_members: (team.members ?? []).map((member) => ({ name: member.name, role: member.role, phone: member.phone, active: member.active })),
+  });
   if (error) throw error;
 }
 
@@ -651,6 +663,8 @@ export async function moveRemoteInventory(
   taskId?: string,
   purpose?: string,
   receiver?: string,
+  receiverKind?: "user" | "team" | "worker",
+  receiverId?: string,
   document?: string,
 ) {
   const { data, error } = await getSupabaseBrowserClient().rpc(
@@ -662,6 +676,8 @@ export async function moveRemoteInventory(
       p_task_id: taskId ?? null,
       p_purpose: purpose ?? null,
       p_receiver: receiver ?? null,
+      p_receiver_kind: receiverKind ?? null,
+      p_receiver_id: receiverId ?? null,
       p_document: document ?? null,
     },
   );
@@ -691,6 +707,8 @@ export async function transitionRemoteInventoryRequest(
   status: InventoryRequest["status"],
   note?: string,
   receiver?: string,
+  receiverKind?: "user" | "team" | "worker",
+  receiverId?: string,
   document?: string,
 ) {
   const { error } = await getSupabaseBrowserClient().rpc("transition_inventory_request", {
@@ -698,6 +716,8 @@ export async function transitionRemoteInventoryRequest(
     p_status: status,
     p_note: note ?? null,
     p_receiver: receiver ?? null,
+    p_receiver_kind: receiverKind ?? null,
+    p_receiver_id: receiverId ?? null,
     p_document: document ?? null,
   });
   if (error) throw error;

@@ -71,6 +71,15 @@ export type ProjectTeam = {
   company: string;
   contact?: string;
   active: boolean;
+  members?: ProjectTeamMember[];
+};
+
+export type ProjectTeamMember = {
+  id: string;
+  name: string;
+  role?: string;
+  phone?: string;
+  active: boolean;
 };
 
 export type EntryTeam = {
@@ -102,12 +111,15 @@ export type InventoryItem = {
 
 export type InventoryMovement = {
   id: string;
+  internalCode: string;
   type: "entry" | "exit" | "adjustment";
   quantity: number;
   balanceAfter: number;
   taskId?: string;
   purpose: string;
   receiver?: string;
+  receiverKind?: "user" | "team" | "worker";
+  receiverId?: string;
   document?: string;
   createdBy: string;
   createdAt: string;

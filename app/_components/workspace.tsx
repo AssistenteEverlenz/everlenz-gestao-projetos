@@ -326,6 +326,7 @@ export function Workspace() {
       "update_photos",
       "status_reports",
       "project_teams",
+      "project_team_members",
       "task_update_teams",
       "inventory_items",
       "inventory_allocations",
@@ -721,16 +722,16 @@ export function Workspace() {
     setToast("Material e reservas atualizados.");
   }
 
-  async function moveInventoryItem(itemId: string, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, purpose?: string, receiver?: string, document?: string) {
+  async function moveInventoryItem(itemId: string, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, purpose?: string, receiver?: string, receiverKind?: "user" | "team" | "worker", receiverId?: string, document?: string) {
     if (!workspace) return;
     if (remoteMode) {
-      await moveRemoteInventory(itemId, type, quantity, taskId, purpose, receiver, document);
+      await moveRemoteInventory(itemId, type, quantity, taskId, purpose, receiver, receiverKind, receiverId, document);
       setReloadToken((value) => value + 1);
     } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
       if (item.id !== itemId) return item;
       const nextQuantity = type === "entry" ? item.quantity + quantity : type === "exit" ? item.quantity - quantity : quantity;
       const balance = Math.max(0, nextQuantity);
-      return { ...item, quantity: balance, allocations: type === "exit" && taskId ? item.allocations.map((allocation) => allocation.taskId === taskId ? { ...allocation, consumed: Math.min(allocation.planned, allocation.consumed + quantity) } : allocation) : item.allocations, movements: [{ id: crypto.randomUUID(), type, quantity, balanceAfter: balance, taskId, purpose: purpose || "Movimentação de estoque", receiver, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] };
+      return { ...item, quantity: balance, allocations: type === "exit" && taskId ? item.allocations.map((allocation) => allocation.taskId === taskId ? { ...allocation, consumed: Math.min(allocation.planned, allocation.consumed + quantity) } : allocation) : item.allocations, movements: [{ id: crypto.randomUUID(), internalCode: `MOV-${Date.now()}`, type, quantity, balanceAfter: balance, taskId, purpose: purpose || "Movimentação de estoque", receiver, receiverKind, receiverId, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] };
     }) }));
     setToast("Movimentação registrada no estoque.");
   }
@@ -744,16 +745,16 @@ export function Workspace() {
     setToast("Requisição criada. Acompanhe em Estoque > Requisições.");
   }
 
-  async function transitionInventoryRequest(requestId: string, status: InventoryRequest["status"], note?: string, receiver?: string, document?: string) {
+  async function transitionInventoryRequest(requestId: string, status: InventoryRequest["status"], note?: string, receiver?: string, receiverKind?: "user" | "team" | "worker", receiverId?: string, document?: string) {
     if (!workspace) return;
     if (remoteMode) {
-      await transitionRemoteInventoryRequest(requestId, status, note, receiver, document);
+      await transitionRemoteInventoryRequest(requestId, status, note, receiver, receiverKind, receiverId, document);
       setReloadToken((value) => value + 1);
     } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
       const request = (item.requests ?? []).find((entry) => entry.id === requestId);
       if (!request) return item;
       const balance = status === "fulfilled" ? Math.max(0, item.quantity - request.quantity) : item.quantity;
-      return { ...item, quantity: balance, requests: (item.requests ?? []).map((entry) => entry.id === requestId ? { ...entry, status, reviewNote: note, reviewedBy: currentUser.name, fulfilledBy: status === "fulfilled" ? currentUser.name : entry.fulfilledBy } : entry), movements: status === "fulfilled" ? [{ id: crypto.randomUUID(), type: "exit", quantity: request.quantity, balanceAfter: balance, taskId: request.taskId, purpose: request.purpose, receiver, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] : item.movements };
+      return { ...item, quantity: balance, requests: (item.requests ?? []).map((entry) => entry.id === requestId ? { ...entry, status, reviewNote: note, reviewedBy: currentUser.name, fulfilledBy: status === "fulfilled" ? currentUser.name : entry.fulfilledBy } : entry), movements: status === "fulfilled" ? [{ id: crypto.randomUUID(), internalCode: `MOV-${Date.now()}`, type: "exit", quantity: request.quantity, balanceAfter: balance, taskId: request.taskId, purpose: request.purpose, receiver, receiverKind, receiverId, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] : item.movements };
     }) }));
     setToast(status === "fulfilled" ? "Requisição atendida e estoque baixado." : "Requisição atualizada.");
   }
@@ -925,7 +926,7 @@ export function Workspace() {
     : null;
   const attentionCount = workspace
     ? workspace.tasks.filter((task) => task.progress < 100 && task.plannedEnd < new Date().toISOString().slice(0, 10)).length
-      + (workspace.inventory ?? []).filter((item) => item.quantity <= item.minimum || item.quantity < item.allocations.reduce((sum, allocation) => sum + Math.max(0, allocation.planned - allocation.consumed), 0)).length
+      + (workspace.inventory ?? []).filter((item) => item.quantity - item.allocations.reduce((sum, allocation) => sum + Math.max(0, allocation.planned - allocation.consumed), 0) <= item.minimum).length
       + (workspace.inventory ?? []).reduce((sum, item) => sum + (item.requests ?? []).filter((request) => request.status === "pending" || request.status === "approved").length, 0)
       + (workspace.issues ?? []).filter((issue) => issue.status !== "resolved").length
       + (workspace.reports ?? []).filter((report) => report.status === "draft" || report.status === "review").length
@@ -1163,6 +1164,8 @@ export function Workspace() {
             <Inventory
               items={common.inventory}
               tasks={common.tasks}
+              members={common.members}
+              projectTeams={common.projectTeams}
               saveItem={saveInventoryItem}
               moveItem={moveInventoryItem}
               deleteItem={deleteInventoryItem}
