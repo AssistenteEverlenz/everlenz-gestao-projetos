@@ -168,7 +168,7 @@ export async function loadWorkspaces(userEmail: string) {
           .order("created_at"),
         supabase
           .from("inventory_movements")
-          .select("id,movement_number,item_id,task_id,movement_type,quantity,purpose,receiver_name,receiver_kind,receiver_id,document_number,balance_after,created_at,profiles!inventory_movements_created_by_fkey(full_name),inventory_items!inner(project_id)")
+          .select("id,movement_number,item_id,task_id,movement_type,quantity,purpose,receiver_name,receiver_kind,receiver_id,document_number,balance_after,request_id,created_at,updated_at,creator:profiles!inventory_movements_created_by_fkey(full_name),updater:profiles!inventory_movements_updated_by_fkey(full_name),inventory_items!inner(project_id)")
           .eq("inventory_items.project_id", row.id)
           .order("created_at", { ascending: false }),
         supabase
@@ -349,7 +349,8 @@ export async function loadWorkspaces(userEmail: string) {
             consumed: Number(allocation.consumed_quantity),
           })),
           movements: (movementRows ?? []).filter((movement) => movement.item_id === item.id).map((movement) => {
-            const creator = Array.isArray(movement.profiles) ? movement.profiles[0] : movement.profiles;
+            const creator = Array.isArray(movement.creator) ? movement.creator[0] : movement.creator;
+            const updater = Array.isArray(movement.updater) ? movement.updater[0] : movement.updater;
             return {
               id: movement.id,
               internalCode: `MOV-${String(movement.movement_number).padStart(6, "0")}`,
@@ -362,8 +363,11 @@ export async function loadWorkspaces(userEmail: string) {
               receiverKind: movement.receiver_kind ?? undefined,
               receiverId: movement.receiver_id ?? undefined,
               document: movement.document_number ?? undefined,
+              requestId: movement.request_id ?? undefined,
               createdBy: creator?.full_name ?? "Usuário",
               createdAt: movement.created_at,
+              updatedBy: updater?.full_name ?? undefined,
+              updatedAt: movement.updated_at ?? undefined,
             };
           }),
           requests: (requestRows ?? []).filter((request) => request.item_id === item.id).map((request) => {
@@ -681,6 +685,40 @@ export async function moveRemoteInventory(
       p_document: document ?? null,
     },
   );
+  if (error) throw error;
+  return Number(data);
+}
+
+export async function updateRemoteInventoryMovement(
+  movementId: string,
+  type: "entry" | "exit" | "adjustment",
+  quantity: number,
+  taskId?: string,
+  purpose?: string,
+  receiver?: string,
+  receiverKind?: "user" | "team" | "worker",
+  receiverId?: string,
+  document?: string,
+) {
+  const { data, error } = await getSupabaseBrowserClient().rpc("update_inventory_movement", {
+    p_movement_id: movementId,
+    p_type: type,
+    p_quantity: quantity,
+    p_task_id: taskId ?? null,
+    p_purpose: purpose ?? null,
+    p_receiver: receiver ?? null,
+    p_receiver_kind: receiverKind ?? null,
+    p_receiver_id: receiverId ?? null,
+    p_document: document ?? null,
+  });
+  if (error) throw error;
+  return Number(data);
+}
+
+export async function deleteRemoteInventoryMovement(movementId: string) {
+  const { data, error } = await getSupabaseBrowserClient().rpc("delete_inventory_movement", {
+    p_movement_id: movementId,
+  });
   if (error) throw error;
   return Number(data);
 }

@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type IconName = "home" | "gantt" | "journal" | "report" | "team" | "settings" | "sun" | "moon" | "bell" | "plus" | "arrow" | "calendar" | "camera" | "check" | "clock" | "weather" | "users" | "download" | "share" | "close" | "chevron" | "filter" | "search" | "menu" | "more" | "building" | "trend" | "alert" | "spark" | "lock" | "info" | "logout";
+export type IconName = "home" | "gantt" | "journal" | "report" | "team" | "settings" | "sun" | "moon" | "bell" | "plus" | "arrow" | "calendar" | "camera" | "check" | "clock" | "weather" | "users" | "download" | "share" | "close" | "chevron" | "filter" | "search" | "menu" | "more" | "building" | "trend" | "alert" | "spark" | "lock" | "info" | "logout" | "edit" | "trash";
 
 export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -28,6 +28,8 @@ export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGEle
     lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></>,
     info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
     logout: <><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></>,
+    edit: <><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></>,
+    trash: <><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>{paths[name]}</svg>;
 }

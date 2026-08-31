@@ -121,8 +121,11 @@ export type InventoryMovement = {
   receiverKind?: "user" | "team" | "worker";
   receiverId?: string;
   document?: string;
+  requestId?: string;
   createdBy: string;
   createdAt: string;
+  updatedBy?: string;
+  updatedAt?: string;
 };
 
 export type InventoryRequest = {

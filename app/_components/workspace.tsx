@@ -13,6 +13,7 @@ import {
 import { Icon, type IconName } from "./icons";
 import type {
   InventoryItem,
+  InventoryMovement,
   InventoryRequest,
   JournalEntry,
   Member,
@@ -63,8 +64,10 @@ import {
   updateRemoteTask,
   updateRemoteTaskProgress,
   deleteRemoteInventoryItem,
+  deleteRemoteInventoryMovement,
   deleteRemoteProjectTeam,
   moveRemoteInventory,
+  updateRemoteInventoryMovement,
   createRemoteInventoryRequest,
   transitionRemoteInventoryRequest,
   importRemoteInventoryItems,
@@ -736,6 +739,35 @@ export function Workspace() {
     setToast("Movimentação registrada no estoque.");
   }
 
+  async function updateInventoryMovement(itemId: string, movement: InventoryMovement, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, purpose?: string, receiver?: string, receiverKind?: "user" | "team" | "worker", receiverId?: string, document?: string) {
+    if (!workspace) return;
+    if (remoteMode) {
+      await updateRemoteInventoryMovement(movement.id, type, quantity, taskId, purpose, receiver, receiverKind, receiverId, document);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
+      if (item.id !== itemId) return item;
+      const movements = (item.movements ?? []).map((entry) => entry.id === movement.id ? { ...entry, type, quantity, taskId, purpose: purpose || "Movimentação de estoque", receiver: type === "exit" ? receiver : undefined, receiverKind: type === "exit" ? receiverKind : undefined, receiverId: type === "exit" ? receiverId : undefined, document, updatedBy: currentUser.name, updatedAt: new Date().toISOString() } : entry).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      let balance = 0;
+      const recalculated = movements.map((entry) => { balance = entry.type === "entry" ? balance + entry.quantity : entry.type === "exit" ? balance - entry.quantity : entry.quantity; return { ...entry, balanceAfter: Math.max(0, balance) }; }).reverse();
+      return { ...item, quantity: Math.max(0, balance), movements: recalculated };
+    }) }));
+    setToast("Movimentação atualizada e saldos recalculados.");
+  }
+
+  async function deleteInventoryMovement(itemId: string, movement: InventoryMovement) {
+    if (!workspace) return;
+    if (remoteMode) {
+      await deleteRemoteInventoryMovement(movement.id);
+      setReloadToken((value) => value + 1);
+    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
+      if (item.id !== itemId) return item;
+      let balance = 0;
+      const recalculated = (item.movements ?? []).filter((entry) => entry.id !== movement.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((entry) => { balance = entry.type === "entry" ? balance + entry.quantity : entry.type === "exit" ? balance - entry.quantity : entry.quantity; return { ...entry, balanceAfter: Math.max(0, balance) }; }).reverse();
+      return { ...item, quantity: Math.max(0, balance), movements: recalculated };
+    }) }));
+    setToast("Movimentação excluída e saldos recalculados.");
+  }
+
   async function createInventoryRequest(request: Pick<InventoryRequest, "itemId" | "taskId" | "quantity" | "purpose">) {
     if (!workspace) return;
     if (remoteMode) {
@@ -1166,8 +1198,11 @@ export function Workspace() {
               tasks={common.tasks}
               members={common.members}
               projectTeams={common.projectTeams}
+              currentUserRole={authenticatedMember.role}
               saveItem={saveInventoryItem}
               moveItem={moveInventoryItem}
+              updateMovement={updateInventoryMovement}
+              deleteMovement={deleteInventoryMovement}
               deleteItem={deleteInventoryItem}
               createRequest={createInventoryRequest}
               transitionRequest={transitionInventoryRequest}
