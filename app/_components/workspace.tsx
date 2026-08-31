@@ -39,6 +39,7 @@ import { Settings } from "./views/settings";
 import { Photos } from "./views/photos";
 import { Inventory } from "./views/inventory";
 import { Alerts } from "./views/alerts";
+import { buildAutomaticAttention, type AutomaticAttention } from "./attention-data";
 import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
@@ -956,13 +957,11 @@ export function Workspace() {
         metrics,
       }
     : null;
-  const attentionCount = workspace
-    ? workspace.tasks.filter((task) => task.progress < 100 && task.plannedEnd < new Date().toISOString().slice(0, 10)).length
-      + (workspace.inventory ?? []).filter((item) => item.quantity - item.allocations.reduce((sum, allocation) => sum + Math.max(0, allocation.planned - allocation.consumed), 0) <= item.minimum).length
-      + (workspace.inventory ?? []).reduce((sum, item) => sum + (item.requests ?? []).filter((request) => request.status === "pending" || request.status === "approved").length, 0)
-      + (workspace.issues ?? []).filter((issue) => issue.status !== "resolved").length
-      + (workspace.reports ?? []).filter((report) => report.status === "draft" || report.status === "review").length
-    : 0;
+  const automaticAttention = workspace
+    ? buildAutomaticAttention(workspace.tasks, workspace.inventory ?? [], workspace.reports ?? [])
+    : [];
+  const openAttentionIssues = (workspace?.issues ?? []).filter((issue) => issue.status !== "resolved");
+  const attentionCount = automaticAttention.length + openAttentionIssues.length;
 
   if (remoteMode && !authReady) return <LoadingScreen />;
   if (remoteMode && !authUser) return <AuthScreen />;
@@ -1139,10 +1138,17 @@ export function Workspace() {
             >
               <Icon name={dark ? "sun" : "moon"} />
             </button>
-            <button className="icon-btn notification" aria-label="Notificações" onClick={() => workspace && navigate("alerts")}>
-              <Icon name="bell" />
-              {attentionCount > 0 && <em>{attentionCount > 9 ? "9+" : attentionCount}</em>}
-            </button>
+            <div className="notification-center">
+              <button className="icon-btn notification" aria-label={`${attentionCount} notificações`} aria-haspopup="true" onClick={() => workspace && navigate("alerts")}>
+                <Icon name="bell" />
+                {attentionCount > 0 && <em className="notification-badge">{attentionCount > 99 ? "99+" : attentionCount}</em>}
+              </button>
+              {workspace && <NotificationPreview
+                automatic={automaticAttention}
+                issues={openAttentionIssues}
+                onOpen={() => navigate("alerts")}
+              />}
+            </div>
             <button
               className="avatar avatar-dark desktop-avatar"
               onClick={() => setMobileMenu(true)}
@@ -1311,6 +1317,20 @@ export function Workspace() {
       />}
     </div>
   );
+}
+
+function NotificationPreview({ automatic, issues, onOpen }: { automatic: AutomaticAttention[]; issues: ProjectIssue[]; onOpen: () => void }) {
+  const items = [
+    ...automatic.map((item) => ({ id: item.id, kind: item.kind, title: item.title, detail: item.detail, tone: item.tone })),
+    ...issues.map((issue) => ({ id: `issue-${issue.id}`, kind: "Registrado pela equipe", title: issue.title, detail: issue.description, tone: issue.priority })),
+  ].slice(0, 6);
+  const total = automatic.length + issues.length;
+  return <section className="notification-preview glass" aria-label="Prévia das notificações">
+    <header><div><span>ACOMPANHAMENTO DA OBRA</span><strong>{total ? `${total} ${total === 1 ? "ponto pede" : "pontos pedem"} atenção` : "Tudo em dia por aqui"}</strong></div><Icon name={total ? "bell" : "check"}/></header>
+    <div className="notification-preview-summary"><span><b>{automatic.length}</b> automáticos</span><span><b>{issues.length}</b> registrados pela equipe</span></div>
+    <div className="notification-preview-list">{items.map((item) => <article className={item.tone} key={item.id}><span><Icon name="alert"/></span><div><small>{item.kind}</small><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}{!items.length && <div className="notification-preview-empty"><Icon name="check"/><span>Cronograma, estoque e relatórios estão em ordem.</span></div>}</div>
+    <button onClick={onOpen}>Abrir Central de atenção <Icon name="arrow"/></button>
+  </section>;
 }
 
 function EmptyWorkspace({ onCreate }: { onCreate: () => void }) {
