@@ -1,4 +1,5 @@
 export type ViewId =
+  | "projects"
   | "overview"
   | "schedule"
   | "journal"
@@ -21,7 +22,10 @@ export type Project = {
   description?: string;
   contractNumber?: string;
   workDays?: number[];
+  archivedAt?: string;
 };
+
+export type TaskResponsibleKind = "user" | "team" | "worker";
 
 export type DependencyType = "FS" | "SS" | "FF" | "SF";
 
@@ -41,6 +45,8 @@ export type Task = {
   dependencyType?: DependencyType;
   lagDays?: number;
   responsible: string;
+  responsibleKind?: TaskResponsibleKind;
+  responsibleRefId?: string;
   color: string;
   critical?: boolean;
   milestone?: boolean;

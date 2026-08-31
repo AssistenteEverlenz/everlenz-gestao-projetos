@@ -18,6 +18,7 @@ Execute os arquivos no SQL Editor de um projeto Supabase novo, nesta ordem:
 14. 014_inventory_control.sql
 15. 015_stock_receivers.sql
 16. 016_inventory_movement_management.sql
+17. 017_project_portfolio_and_task_responsibles.sql
 
 O fluxo crítico usa a função record_daily_progress. Ela bloqueia a atividade,
 calcula o percentual final e grava diário, medição e metadados das fotos na mesma

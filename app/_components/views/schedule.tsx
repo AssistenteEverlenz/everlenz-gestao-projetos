@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
@@ -20,7 +20,9 @@ import type {
   JournalEntry,
   Member,
   Project,
+  ProjectTeam,
   Task,
+  TaskResponsibleKind,
   ViewId,
 } from "../types";
 import { Modal } from "../ui";
@@ -37,6 +39,7 @@ type Props = {
   tasks: Task[];
   entries: JournalEntry[];
   members: Member[];
+  projectTeams?: ProjectTeam[];
   navigate: (view: ViewId) => void;
   metrics: { overall: number; active: number };
   addTask: (task: Task) => void;
@@ -106,6 +109,7 @@ export function Schedule({
   tasks,
   entries,
   members,
+  projectTeams = [],
   metrics,
   addTask,
   editTask,
@@ -130,10 +134,13 @@ export function Schedule({
   const [historyTask, setHistoryTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [zoom, setZoom] = useState<"Dias" | "Semanas">("Semanas");
+  const zoomLevels = ["Visão geral", "Semanas", "Dias"] as const;
+  const [zoom, setZoom] = useState<(typeof zoomLevels)[number]>("Visão geral");
   const [mobileView, setMobileView] = useState<"execution" | "timeline">(
     "execution",
   );
+  const [mobileFullGantt, setMobileFullGantt] = useState(false);
+  const [showMobileTaskTable, setShowMobileTaskTable] = useState(true);
   const [showBaseline, setShowBaseline] = useState(true);
   const [filterCritical, setFilterCritical] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
@@ -220,14 +227,24 @@ export function Schedule({
   }, [tasks]);
   const timelineLabels = useMemo(
     () =>
-      Array.from({ length: zoom === "Dias" ? 14 : 8 }, (_, index) => {
+      Array.from(
+        { length: zoom === "Dias" ? Math.min(31, projectDays) : zoom === "Semanas" ? 12 : 8 },
+        (_, index) => {
         const date = toDate(project.start);
         date.setDate(
           date.getDate() +
             index *
-              (zoom === "Dias"
-                ? Math.max(1, Math.floor(projectDays / 14))
-                : Math.max(7, Math.floor(projectDays / 8))),
+              Math.max(
+                1,
+                Math.floor(
+                  projectDays /
+                    (zoom === "Dias"
+                      ? Math.min(31, projectDays)
+                      : zoom === "Semanas"
+                        ? 12
+                        : 8),
+                ),
+              ),
         );
         return date
           .toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
@@ -236,6 +253,22 @@ export function Schedule({
       }),
     [project.start, projectDays, zoom],
   );
+  const timelineWidth =
+    zoom === "Dias"
+      ? Math.min(9000, Math.max(1100, projectDays * 30))
+      : zoom === "Semanas"
+        ? Math.min(5200, Math.max(820, projectDays * 14))
+        : 620;
+  const zoomIndex = zoomLevels.indexOf(zoom);
+
+  useEffect(() => {
+    if (!mobileFullGantt) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [mobileFullGantt]);
 
   function barStyle(task: Task, baseline = false) {
     const startValue = baseline ? task.baselineStart : task.plannedStart;
@@ -428,6 +461,7 @@ export function Schedule({
             project={project}
             tasks={tasks}
             members={members}
+            projectTeams={projectTeams}
             onClose={() => setCreating(false)}
             onSave={(task) => {
               addTask(task);
@@ -471,18 +505,30 @@ export function Schedule({
             <span /> Linha de base
           </label>
         </div>
-        <div className="segmented">
+        <div className="gantt-zoom-control" aria-label="Zoom do cronograma">
           <button
-            className={zoom === "Dias" ? "active" : ""}
-            onClick={() => setZoom("Dias")}
+            type="button"
+            disabled={zoomIndex === 0}
+            onClick={() => setZoom(zoomLevels[Math.max(0, zoomIndex - 1)])}
+            aria-label="Diminuir zoom"
           >
-            Dias
+            −
           </button>
+          <span>
+            <small>ZOOM</small>
+            <strong>{zoom}</strong>
+          </span>
           <button
-            className={zoom === "Semanas" ? "active" : ""}
-            onClick={() => setZoom("Semanas")}
+            type="button"
+            disabled={zoomIndex === zoomLevels.length - 1}
+            onClick={() =>
+              setZoom(
+                zoomLevels[Math.min(zoomLevels.length - 1, zoomIndex + 1)],
+              )
+            }
+            aria-label="Aumentar zoom"
           >
-            Semanas
+            +
           </button>
         </div>
         <div className="gantt-quick-filters">
@@ -527,7 +573,59 @@ export function Schedule({
         </div>
       </section>
 
-      <section className="gantt-shell glass">
+      <section
+        className={`gantt-shell glass ${mobileFullGantt ? "mobile-gantt-fullscreen" : ""} ${showMobileTaskTable ? "" : "mobile-task-table-hidden"}`}
+      >
+        {mobileFullGantt && (
+          <header className="mobile-gantt-stage-header">
+            <div>
+              <small>CRONOGRAMA COMPLETO</small>
+              <strong>{project.name}</strong>
+            </div>
+            <div className="mobile-gantt-zoom" aria-label={`Zoom atual: ${zoom}`}>
+              <button
+                disabled={zoomIndex === 0}
+                onClick={() => setZoom(zoomLevels[Math.max(0, zoomIndex - 1)])}
+                aria-label="Diminuir zoom"
+              >
+                −
+              </button>
+              <span>{zoom}</span>
+              <button
+                disabled={zoomIndex === zoomLevels.length - 1}
+                onClick={() =>
+                  setZoom(
+                    zoomLevels[
+                      Math.min(zoomLevels.length - 1, zoomIndex + 1)
+                    ],
+                  )
+                }
+                aria-label="Aumentar zoom"
+              >
+                +
+              </button>
+            </div>
+            <button
+              className="secondary-btn compact mobile-task-panel-toggle"
+              onClick={() => setShowMobileTaskTable((value) => !value)}
+              aria-label={
+                showMobileTaskTable
+                  ? "Ocultar tabela de atividades"
+                  : "Mostrar tabela de atividades"
+              }
+            >
+              <Icon name="menu" />
+              {showMobileTaskTable ? "Ocultar atividades" : "Mostrar atividades"}
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => setMobileFullGantt(false)}
+              aria-label="Fechar Gantt completo"
+            >
+              <Icon name="close" />
+            </button>
+          </header>
+        )}
         <div className="gantt-summary">
           <div>
             <span>AVANÇO REAL</span>
@@ -556,12 +654,18 @@ export function Schedule({
           </div>
         </div>
         <div className="gantt-scroll">
-          <div className={`gantt-grid ${zoom === "Dias" ? "zoom-days" : ""}`}>
+          <div
+            className={`gantt-grid zoom-${zoom === "Visão geral" ? "overview" : zoom.toLowerCase()}`}
+            style={{ "--timeline-width": `${timelineWidth}px` } as CSSProperties}
+          >
             <div className="task-table-head">
               <span>EAP</span>
               <span>ATIVIDADE</span>
               <span>DURAÇÃO</span>
-              <span>%</span>
+              <span>PROGRESSO</span>
+              <span>INÍCIO</span>
+              <span>TÉRMINO</span>
+              <span>STATUS</span>
             </div>
             <div className="timeline-head">
               {timelineLabels.map((label, index) => (
@@ -627,41 +731,13 @@ export function Schedule({
                 const targetUsesFinish = relation === "FF" || relation === "SF";
                 const rowDirection = targetY >= sourceY ? 1 : -1;
                 const laneOffset = (targetIndex % 3) * 4;
-                const intermediateTasks = visible.slice(
-                  Math.min(sourceIndex, targetIndex) + 1,
-                  Math.max(sourceIndex, targetIndex),
-                );
-                const intermediateStarts = intermediateTasks.map((item) =>
-                  Math.max(
-                    0,
-                    Math.min(
-                      995,
-                      (daysBetween(project.start, item.plannedStart) /
-                        projectDays) *
-                        1000,
-                    ),
-                  ),
-                );
-                const intermediateEnds = intermediateTasks.map((item) =>
-                  Math.max(
-                    0,
-                    Math.min(
-                      995,
-                      ((daysBetween(project.start, item.plannedEnd) + 1) /
-                        projectDays) *
-                        1000,
-                    ),
-                  ),
-                );
                 const sourceExitX = Math.max(
                   5,
                   Math.min(
                     995,
                     sourceUsesFinish
-                      ? Math.max(sourceX, ...intermediateEnds) + 14 + laneOffset
-                      : Math.min(sourceX, ...intermediateStarts) -
-                          14 -
-                          laneOffset,
+                      ? sourceX + 14 + laneOffset
+                      : sourceX - 14 - laneOffset,
                   ),
                 );
                 const targetEntryX = Math.max(
@@ -770,8 +846,34 @@ export function Schedule({
                         ? "Marco"
                         : `${workingDuration(task.plannedStart, task.plannedEnd, project.workDays)}d`}
                     </span>
-                    <span>
-                      <b>{task.progress}%</b>
+                    <span className="task-progress-cell">
+                      <i>
+                        <b
+                          style={{
+                            width: `${task.progress}%`,
+                            background: palette.progress,
+                          }}
+                        />
+                      </i>
+                      <strong>{task.progress}%</strong>
+                    </span>
+                    <span className="task-date-cell">
+                      {formatDate(task.plannedStart)}
+                    </span>
+                    <span className="task-date-cell">
+                      {formatDate(task.plannedEnd)}
+                    </span>
+                    <span
+                      className="task-status-cell"
+                      title={palette.label}
+                      aria-label={palette.label}
+                    >
+                      <i
+                        style={{
+                          background: palette.period,
+                          color: palette.period,
+                        }}
+                      />
                     </span>
                   </button>
                   <button
@@ -799,6 +901,17 @@ export function Schedule({
                           background: palette.period,
                         }}
                       />
+                    ) : childCount > 0 ? (
+                      <span
+                        className="gantt-parent-bar"
+                        style={{
+                          ...barStyle(task),
+                          color: palette.period,
+                          background: palette.period,
+                        }}
+                      >
+                        <b>{task.progress}%</b>
+                      </span>
                     ) : (
                       <span
                         className="gantt-bar"
@@ -834,9 +947,12 @@ export function Schedule({
           </button>
           <button
             className={mobileView === "timeline" ? "active" : ""}
-            onClick={() => setMobileView("timeline")}
+            onClick={() => {
+              setMobileView("timeline");
+              setMobileFullGantt(true);
+            }}
           >
-            <Icon name="gantt" /> Linha do tempo
+            <Icon name="gantt" /> Gantt completo
           </button>
         </div>
         <div className={`gantt-mobile-list mobile-mode-${mobileView}`}>
@@ -1016,6 +1132,7 @@ export function Schedule({
           project={project}
           tasks={tasks}
           members={members}
+          projectTeams={projectTeams}
           onClose={() => setCreating(false)}
           onSave={(task) => {
             addTask(task);
@@ -1048,6 +1165,7 @@ export function Schedule({
               project={project}
               tasks={tasks}
               members={members}
+              projectTeams={projectTeams}
               initial={selected}
               onClose={() => setEditing(false)}
               onSave={async (task) => {
@@ -1341,6 +1459,7 @@ function TaskForm({
   project,
   tasks,
   members,
+  projectTeams,
   initial,
   onClose,
   onSave,
@@ -1348,6 +1467,7 @@ function TaskForm({
   project: Project;
   tasks: Task[];
   members: Member[];
+  projectTeams: ProjectTeam[];
   initial?: Task;
   onClose: () => void;
   onSave: (task: Task) => void | Promise<void>;
@@ -1379,6 +1499,11 @@ function TaskForm({
     initial?.baselineEnd ?? project.start,
   );
   const [responsible, setResponsible] = useState(initial?.responsible ?? "");
+  const [responsibleKind, setResponsibleKind] =
+    useState<TaskResponsibleKind | undefined>(initial?.responsibleKind);
+  const [responsibleRefId, setResponsibleRefId] = useState(
+    initial?.responsibleRefId ?? "",
+  );
   const [parentId, setParentId] = useState(initial?.parentId ?? "");
   const [dependencyId, setDependencyId] = useState(initial?.dependencyId ?? "");
   const [dependencyType, setDependencyType] = useState<DependencyType>(
@@ -1455,6 +1580,8 @@ function TaskForm({
         progress: initial?.progress ?? 0,
         weight,
         responsible,
+        responsibleKind,
+        responsibleRefId: responsibleRefId || undefined,
         parentId: parentId || undefined,
         dependencyId: dependencyId || undefined,
         dependencyType: dependencyId ? dependencyType : undefined,
@@ -1474,6 +1601,44 @@ function TaskForm({
     }
   }
   const availableTasks = tasks.filter((task) => task.id !== initial?.id);
+  const responsibleOptions = [
+    ...members
+      .filter((member) => !member.pending)
+      .map((member) => ({
+        key: `user:${member.id}`,
+        id: member.id,
+        kind: "user" as const,
+        label: member.name,
+        group: "Usuários da plataforma",
+      })),
+    ...projectTeams.flatMap((team) => [
+      {
+        key: `team:${team.id}`,
+        id: team.id,
+        kind: "team" as const,
+        label: team.company || team.name,
+        group: "Empresas e equipes de campo",
+      },
+      ...(team.members ?? [])
+        .filter((worker) => worker.active)
+        .map((worker) => ({
+          key: `worker:${worker.id}`,
+          id: worker.id,
+          kind: "worker" as const,
+          label: worker.name,
+          group: `Colaboradores · ${team.company || team.name}`,
+        })),
+    ]),
+  ];
+  const responsibleValue =
+    responsibleKind && responsibleRefId
+      ? `${responsibleKind}:${responsibleRefId}`
+      : responsible
+        ? responsibleOptions.find((option) => option.label === responsible)?.key ?? ""
+        : "";
+  const responsibleGroups = Array.from(
+    new Set(responsibleOptions.map((option) => option.group)),
+  );
   const form = (
     <form className="task-form" onSubmit={submit}>
       <label>
@@ -1608,15 +1773,28 @@ function TaskForm({
       <label>
         <span>Responsável</span>
         <select
-          value={responsible}
-          onChange={(event) => setResponsible(event.target.value)}
+          value={responsibleValue}
+          onChange={(event) => {
+            const option = responsibleOptions.find(
+              (item) => item.key === event.target.value,
+            );
+            setResponsible(option?.label ?? "");
+            setResponsibleKind(option?.kind);
+            setResponsibleRefId(option?.id ?? "");
+          }}
         >
           <option value="">Definir depois</option>
-          {members
-            .filter((member) => !member.pending)
-            .map((member) => (
-              <option key={member.id}>{member.name}</option>
-            ))}
+          {responsibleGroups.map((group) => (
+            <optgroup key={group} label={group}>
+              {responsibleOptions
+                .filter((option) => option.group === group)
+                .map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
         </select>
       </label>
       <label>

@@ -88,7 +88,7 @@ export async function loadWorkspaces(userEmail: string) {
   const { data: projectRows, error: projectError } = await supabase
     .from("projects")
     .select(
-      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days",
+      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at",
     )
     .order("created_at");
   if (projectError) throw projectError;
@@ -210,6 +210,8 @@ export async function loadWorkspaces(userEmail: string) {
           dependencyType: item.dependency_type ?? undefined,
           lagDays: item.lag_days ?? undefined,
           responsible: item.responsible_name ?? "",
+          responsibleKind: item.responsible_kind ?? undefined,
+          responsibleRefId: item.responsible_ref_id ?? undefined,
           color: item.color,
           critical: item.is_critical,
           milestone: item.is_milestone,
@@ -314,6 +316,7 @@ export async function loadWorkspaces(userEmail: string) {
           progress: 0,
           status: statusMap[row.status] ?? "Planejamento",
           workDays: row.work_days ?? [1, 2, 3, 4, 5],
+          archivedAt: row.archived_at ?? undefined,
         },
         tasks,
         entries,
@@ -874,6 +877,17 @@ export async function updateRemoteProjectWorkDays(
   if (error) throw error;
 }
 
+export async function setRemoteProjectArchived(
+  projectId: string,
+  archived: boolean,
+) {
+  const { error } = await getSupabaseBrowserClient().rpc(
+    "set_project_archived",
+    { p_project_id: projectId, p_archived: archived },
+  );
+  if (error) throw error;
+}
+
 export async function updateRemoteTaskDates(projectId: string, tasks: Task[]) {
   const supabase = getSupabaseBrowserClient();
   const results = await Promise.all(
@@ -900,9 +914,13 @@ export async function createRemoteTask(
 ) {
   const supabase = getSupabaseBrowserClient();
   const responsibleId =
-    members.find(
-      (member) => member.name === task.responsible && !member.pending,
-    )?.id ?? null;
+    task.responsibleKind === "user"
+      ? task.responsibleRefId ??
+        members.find(
+          (member) => member.name === task.responsible && !member.pending,
+        )?.id ??
+        null
+      : null;
   const { error } = await supabase.from("tasks").insert({
     id: task.id,
     project_id: projectId,
@@ -918,6 +936,9 @@ export async function createRemoteTask(
     progress: task.progress,
     weight: task.weight,
     responsible_id: responsibleId,
+    responsible_kind: task.responsibleKind ?? null,
+    responsible_ref_id: task.responsibleRefId ?? null,
+    responsible_label: task.responsible || null,
     color: task.color,
     is_milestone: Boolean(task.milestone),
     is_critical: Boolean(task.critical),
@@ -944,9 +965,13 @@ export async function updateRemoteTask(
 ) {
   const supabase = getSupabaseBrowserClient();
   const responsibleId =
-    members.find(
-      (member) => member.name === task.responsible && !member.pending,
-    )?.id ?? null;
+    task.responsibleKind === "user"
+      ? task.responsibleRefId ??
+        members.find(
+          (member) => member.name === task.responsible && !member.pending,
+        )?.id ??
+        null
+      : null;
   const { error } = await supabase
     .from("tasks")
     .update({
@@ -961,6 +986,9 @@ export async function updateRemoteTask(
       baseline_end: task.baselineEnd ?? null,
       weight: task.weight,
       responsible_id: responsibleId,
+      responsible_kind: task.responsibleKind ?? null,
+      responsible_ref_id: task.responsibleRefId ?? null,
+      responsible_label: task.responsible || null,
       color: task.color,
       is_milestone: Boolean(task.milestone),
       is_critical: Boolean(task.critical),

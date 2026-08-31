@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- identidade visual local */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { currentUser, initialWorkspaces } from "./data";
 import {
@@ -39,6 +39,7 @@ import { Settings } from "./views/settings";
 import { Photos } from "./views/photos";
 import { Inventory } from "./views/inventory";
 import { Alerts } from "./views/alerts";
+import { Projects } from "./views/projects";
 import { buildAutomaticAttention, type AutomaticAttention } from "./attention-data";
 import {
   getSupabaseBrowserClient,
@@ -77,12 +78,14 @@ import {
   saveRemoteProjectTeam,
   saveRemoteReportTemplate,
   saveRemoteReportSummary,
+  setRemoteProjectArchived,
   generateRemoteReportSummary,
   transitionRemoteStatusReport,
 } from "@/lib/supabase/repository";
 
 const nav: Array<{ id: ViewId; label: string; short: string; icon: IconName }> =
   [
+    { id: "projects", label: "Projetos", short: "Projetos", icon: "building" },
     { id: "overview", label: "Visão geral", short: "Início", icon: "home" },
     { id: "schedule", label: "Cronograma", short: "Gantt", icon: "gantt" },
     {
@@ -106,6 +109,12 @@ const titles: Record<
   ViewId,
   { eyebrow: string; title: string; description: string }
 > = {
+  projects: {
+    eyebrow: "PORTFÓLIO DE OBRAS",
+    title: "Central de projetos",
+    description:
+      "Acompanhe, abra, arquive e restaure todos os projetos da operação.",
+  },
   overview: {
     eyebrow: "CONTROLE DA OBRA",
     title: "Visão geral da obra",
@@ -218,8 +227,12 @@ export function Workspace() {
   const realtimeRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const activeWorkspaces = workspaces.filter(
+    (item) => !item.project.archivedAt,
+  );
   const workspace =
-    workspaces.find((item) => item.project.id === projectId) ?? workspaces[0];
+    activeWorkspaces.find((item) => item.project.id === projectId) ??
+    activeWorkspaces[0];
   const authenticatedMember = workspace?.members.find(
     (member) => member.id === (authUser?.id ?? currentUser.id),
   ) ?? (authUser ? {
@@ -247,7 +260,9 @@ export function Workspace() {
         try {
           const parsed = JSON.parse(saved) as ProjectWorkspace[];
           setWorkspaces(parsed);
-          setProjectId(parsed[0]?.project.id ?? null);
+          setProjectId(
+            parsed.find((item) => !item.project.archivedAt)?.project.id ?? null,
+          );
         } catch {
           window.localStorage.removeItem(storageKey);
         }
@@ -286,9 +301,12 @@ export function Workspace() {
         setNeedsOrganization(!profile.organization_id);
         setWorkspaces(loaded);
         setProjectId((current) =>
-          loaded.some((item) => item.project.id === current)
+          loaded.some(
+            (item) => item.project.id === current && !item.project.archivedAt,
+          )
             ? current
-            : (loaded[0]?.project.id ?? null),
+            : (loaded.find((item) => !item.project.archivedAt)?.project.id ??
+              null),
         );
         setRemoteLoading(false);
         setRealtimeState("connected");
@@ -388,7 +406,7 @@ export function Workspace() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const metrics = useMemo(() => {
+  const metrics = (() => {
     const tasks = workspace?.tasks ?? [];
     const measurable = tasks.filter(
       (task) => !tasks.some((child) => child.parentId === task.id),
@@ -407,7 +425,7 @@ export function Workspace() {
       active: tasks.filter((task) => task.progress > 0 && task.progress < 100)
         .length,
     };
-  }, [workspace]);
+  })();
 
   function updateCurrent(
     update: (current: ProjectWorkspace) => ProjectWorkspace,
@@ -924,6 +942,32 @@ export function Workspace() {
     setToast("Projeto criado. Comece estruturando o cronograma.");
   }
 
+  async function setProjectArchived(projectIdToChange: string, archived: boolean) {
+    if (remoteMode)
+      await setRemoteProjectArchived(projectIdToChange, archived);
+    const archivedAt = archived ? new Date().toISOString() : undefined;
+    setWorkspaces((current) =>
+      current.map((item) =>
+        item.project.id === projectIdToChange
+          ? { ...item, project: { ...item.project, archivedAt } }
+          : item,
+      ),
+    );
+    if (archived && workspace?.project.id === projectIdToChange) {
+      const next = activeWorkspaces.find(
+        (item) => item.project.id !== projectIdToChange,
+      );
+      setProjectId(next?.project.id ?? null);
+    }
+    if (!archived) setProjectId(projectIdToChange);
+    setView("projects");
+    setToast(
+      archived
+        ? "Projeto excluído da operação ativa. Ele pode ser reaberto a qualquer momento."
+        : "Projeto reaberto e disponível para a equipe.",
+    );
+  }
+
   async function getProfileOrganization() {
     const profile = await getProfile();
     return profile.organization_id ?? undefined;
@@ -1038,7 +1082,7 @@ export function Workspace() {
         </button>
         {projectMenu && workspace && (
           <div className="project-switcher glass">
-            {workspaces.map((option) => (
+            {activeWorkspaces.map((option) => (
               <button
                 key={option.project.id}
                 className={
@@ -1047,12 +1091,23 @@ export function Workspace() {
                 onClick={() => {
                   setProjectId(option.project.id);
                   setProjectMenu(false);
+                  setView("overview");
                 }}
               >
                 <strong>{option.project.name}</strong>
                 <small>{option.project.client}</small>
               </button>
             ))}
+            <button
+              className="all-projects-option"
+              onClick={() => {
+                setProjectMenu(false);
+                navigate("projects");
+              }}
+            >
+              <strong>Todos os projetos</strong>
+              <small>Ativos, concluídos e excluídos</small>
+            </button>
             <button
               className="new-project-option"
               onClick={() => setProjectModal(true)}
@@ -1068,7 +1123,7 @@ export function Workspace() {
             <button
               key={item.id}
               data-tour={`nav-${item.id}`}
-              disabled={!workspace}
+              disabled={!workspace && item.id !== "projects"}
               className={view === item.id ? "active" : ""}
               onClick={() => navigate(item.id)}
             >
@@ -1112,11 +1167,17 @@ export function Workspace() {
           </div>
           <div className="header-copy">
             <small>
-              {workspace ? meta.eyebrow : "NOVO AMBIENTE DE PROJETOS"}
+              {workspace || view === "projects"
+                ? meta.eyebrow
+                : "NOVO AMBIENTE DE PROJETOS"}
             </small>
-            <h1>{workspace ? meta.title : "Vamos colocar sua obra em dia"}</h1>
+            <h1>
+              {workspace || view === "projects"
+                ? meta.title
+                : "Vamos colocar sua obra em dia"}
+            </h1>
             <p>
-              {workspace
+              {workspace || view === "projects"
                 ? meta.description
                 : "Crie o primeiro projeto para montar o cronograma, registrar o campo e gerar relatórios."}
             </p>
@@ -1160,7 +1221,19 @@ export function Workspace() {
         </header>
 
         <div className="content-area">
-          {!workspace && (
+          {view === "projects" && (
+            <Projects
+              workspaces={workspaces}
+              currentUserId={authUser?.id ?? currentUser.id}
+              onCreate={() => setProjectModal(true)}
+              onOpen={(nextProjectId) => {
+                setProjectId(nextProjectId);
+                navigate("overview");
+              }}
+              onArchive={setProjectArchived}
+            />
+          )}
+          {!workspace && view !== "projects" && (
             <EmptyWorkspace onCreate={() => setProjectModal(true)} />
           )}
           {workspace && common && view === "overview" && (
@@ -1270,7 +1343,7 @@ export function Workspace() {
           ))}
           <button
             data-tour="nav-team"
-            className={["photos", "inventory", "alerts", "team", "settings"].includes(view) ? "active" : ""}
+            className={["projects", "photos", "inventory", "alerts", "team", "settings"].includes(view) ? "active" : ""}
             onClick={() => setMobileMenu(true)}
           >
             <Icon name="more" />
@@ -1281,6 +1354,7 @@ export function Workspace() {
 
       {mobileMenu && <Modal title="Mais opções" subtitle={`${authenticatedMember.name} · ${authenticatedMember.role}`} onClose={() => !signingOut && setMobileMenu(false)}>
         <div className="mobile-more-list">
+          <button onClick={() => { setMobileMenu(false); navigate("projects"); }}><Icon name="building"/><span><strong>Todos os projetos</strong><small>Ativos, concluídos e excluídos</small></span><Icon name="chevron"/></button>
           <button onClick={() => { setMobileMenu(false); navigate("photos"); }}><Icon name="camera"/><span><strong>Galeria da obra</strong><small>Fotos e relatórios em lote</small></span><Icon name="chevron"/></button>
           <button onClick={() => { setMobileMenu(false); navigate("inventory"); }}><Icon name="building"/><span><strong>Estoque</strong><small>Materiais e reservas por EAP</small></span><Icon name="chevron"/></button>
           <button onClick={() => { setMobileMenu(false); navigate("alerts"); }}><Icon name="alert"/><span><strong>Central de atenção</strong><small>{attentionCount} alertas e ocorrências</small></span><Icon name="chevron"/></button>
