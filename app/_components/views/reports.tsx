@@ -96,13 +96,21 @@ export function Reports({
   const selectedReport = reports.find((report) => report.date === selectedDate);
   const openIssues = issues.filter((issue) => issue.status !== "resolved");
   const reportCurve = buildReportCurve(project, tasks, entries, selectedDate);
+  const ganttStart = tasks.reduce(
+    (value, task) => (task.plannedStart < value ? task.plannedStart : value),
+    project.start,
+  );
+  const ganttEnd = tasks.reduce(
+    (value, task) => (task.plannedEnd > value ? task.plannedEnd : value),
+    project.end,
+  );
   const ganttDays = Math.max(
     1,
-    Math.round((dateValue(project.end) - dateValue(project.start)) / dayMs) + 1,
+    Math.round((dateValue(ganttEnd) - dateValue(ganttStart)) / dayMs) + 1,
   );
   const ganttLabels = Array.from({ length: 10 }, (_, index) => {
     const date = new Date(
-      dateValue(project.start) +
+      dateValue(ganttStart) +
         Math.round(((ganttDays - 1) * index) / 9) * dayMs,
     );
     return date
@@ -111,7 +119,7 @@ export function Reports({
       .toUpperCase();
   });
   const ganttBar = (task: Task) => ({
-    left: `${Math.max(0, Math.min(100, ((dateValue(task.plannedStart) - dateValue(project.start)) / dayMs / ganttDays) * 100))}%`,
+    left: `${Math.max(0, Math.min(100, ((dateValue(task.plannedStart) - dateValue(ganttStart)) / dayMs / ganttDays) * 100))}%`,
     width: `${Math.max(1, Math.min(100, ((Math.round((dateValue(task.plannedEnd) - dateValue(task.plannedStart)) / dayMs) + 1) / ganttDays) * 100))}%`,
   });
 
@@ -187,7 +195,7 @@ export function Reports({
         0,
         Math.min(
           995,
-          (((dateValue(value) - dateValue(project.start)) / dayMs +
+          (((dateValue(value) - dateValue(ganttStart)) / dayMs +
             (endBoundary ? 1 : 0)) /
             ganttDays) *
             1000,
@@ -335,8 +343,8 @@ export function Reports({
           ),
         )}
         <b>
-          {project.start.split("-").reverse().join("/")} -{" "}
-          {project.end.split("-").reverse().join("/")}
+          {ganttStart.split("-").reverse().join("/")} -{" "}
+          {ganttEnd.split("-").reverse().join("/")}
         </b>
       </footer>
     </section>

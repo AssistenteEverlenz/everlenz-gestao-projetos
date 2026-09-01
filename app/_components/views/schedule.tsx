@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
@@ -70,6 +70,12 @@ const formatDate = (value: string) =>
       year: "numeric",
     })
     .replace(" de ", " ");
+const dependencyLabels: Record<DependencyType, string> = {
+  FS: "Término → Início (FS)",
+  SS: "Início → Início (SS)",
+  FF: "Término → Término (FF)",
+  SF: "Início → Término (SF)",
+};
 
 type RoutePoint = { x: number; y: number };
 
@@ -155,6 +161,26 @@ export function Schedule({
     targetId: string;
     asChild: boolean;
   } | null>(null);
+  const suppressTaskClick = useRef(false);
+  const ganttDesktopRef = useRef<HTMLDivElement | null>(null);
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
+  const timelinePan = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+    pageY: number;
+    moved: boolean;
+  } | null>(null);
+  const taskRowGesture = useRef<{
+    taskId: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    activated: boolean;
+    timer: number;
+  } | null>(null);
   const orderedTasks = useMemo(() => normalizeTaskHierarchy(tasks), [tasks]);
   const statusCounts = useMemo(
     () =>
@@ -201,7 +227,27 @@ export function Schedule({
       return true;
     });
   }, [collapsedIds, filterCritical, hideCompleted, orderedTasks, statusFilter]);
-  const projectDays = Math.max(1, daysBetween(project.start, project.end) + 1);
+  const timelineStart = tasks.reduce(
+    (value, task) => {
+      const earliest =
+        task.baselineStart && task.baselineStart < task.plannedStart
+          ? task.baselineStart
+          : task.plannedStart;
+      return earliest < value ? earliest : value;
+    },
+    project.start,
+  );
+  const timelineEnd = tasks.reduce(
+    (value, task) => {
+      const latest =
+        task.baselineEnd && task.baselineEnd > task.plannedEnd
+          ? task.baselineEnd
+          : task.plannedEnd;
+      return latest > value ? latest : value;
+    },
+    project.end,
+  );
+  const projectDays = Math.max(1, daysBetween(timelineStart, timelineEnd) + 1);
   const planned = useMemo(() => {
     const measurable = tasks.filter(
       (task) => !tasks.some((child) => child.parentId === task.id),
@@ -225,14 +271,14 @@ export function Schedule({
     const weight = measurable.reduce((sum, task) => sum + task.weight, 0);
     return weight ? Math.round(weighted / weight) : 0;
   }, [tasks]);
-  const timelineLabels = useMemo(() => {
+  const timelineLabels = (() => {
     const shortDate = (date: Date) =>
       date
         .toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
         .toUpperCase()
         .replace(" DE ", " ");
     const dateAt = (offset: number) => {
-      const date = toDate(project.start);
+      const date = toDate(timelineStart);
       date.setDate(date.getDate() + offset);
       return date;
     };
@@ -257,7 +303,7 @@ export function Schedule({
     return Array.from({ length: sections }, (_, index) =>
       shortDate(dateAt(Math.floor((index * projectDays) / sections))),
     );
-  }, [project.start, projectDays, zoom]);
+  })();
   const timelineWidth =
     zoom === "Dias"
       ? projectDays * 44
@@ -280,7 +326,7 @@ export function Schedule({
     const endValue = baseline ? task.baselineEnd : task.plannedEnd;
     if (!startValue || !endValue) return { display: "none" };
     return {
-      left: `${Math.min(99, (daysBetween(project.start, startValue) / projectDays) * 100)}%`,
+      left: `${Math.min(99, (daysBetween(timelineStart, startValue) / projectDays) * 100)}%`,
       width: `${Math.max(0.8, ((daysBetween(startValue, endValue) + 1) / projectDays) * 100)}%`,
     };
   }
@@ -330,8 +376,13 @@ export function Schedule({
       asChild: event.clientX > bounds.left + Math.min(150, bounds.width * 0.34),
     });
   }
-  async function applyReorder(target: Task, childIntent?: boolean) {
-    const dragged = orderedTasks.find((task) => task.id === draggingId);
+  async function applyReorder(
+    target: Task,
+    childIntent?: boolean,
+    draggedIdOverride?: string,
+  ) {
+    const activeDraggedId = draggedIdOverride ?? draggingId;
+    const dragged = orderedTasks.find((task) => task.id === activeDraggedId);
     if (
       !dragged ||
       dragged.id === target.id ||
@@ -382,24 +433,17 @@ export function Schedule({
       )?.closest<HTMLElement>("[data-task-id]") ?? null
     );
   }
-  function beginPointerDrag(
+  function updatePointerDrop(
     event: ReactPointerEvent<HTMLElement>,
-    taskId: string,
+    activeDraggedId: string,
   ) {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDraggingId(taskId);
-  }
-  function movePointerDrag(event: ReactPointerEvent<HTMLElement>) {
-    if (!draggingId) return;
     const row = pointerTarget(event);
     const targetId = row?.dataset.taskId;
     if (
       !row ||
       !targetId ||
-      targetId === draggingId ||
-      descendantIds(draggingId).has(targetId)
+      targetId === activeDraggedId ||
+      descendantIds(activeDraggedId).has(targetId)
     )
       return;
     const bounds = row.getBoundingClientRect();
@@ -407,6 +451,20 @@ export function Schedule({
       targetId,
       asChild: event.clientX > bounds.left + Math.min(150, bounds.width * 0.34),
     });
+  }
+  function beginPointerDrag(
+    event: ReactPointerEvent<HTMLElement>,
+    taskId: string,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressTaskClick.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingId(taskId);
+  }
+  function movePointerDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (!draggingId) return;
+    updatePointerDrop(event, draggingId);
   }
   function endPointerDrag(event: ReactPointerEvent<HTMLElement>) {
     if (!draggingId) return;
@@ -419,10 +477,129 @@ export function Schedule({
         event.clientX > bounds.left + Math.min(150, bounds.width * 0.34),
       );
     } else resetDrag();
+    window.setTimeout(() => {
+      suppressTaskClick.current = false;
+    }, 0);
   }
   function resetDrag() {
     setDraggingId(null);
     setDropIntent(null);
+  }
+  function beginTaskRowGesture(
+    event: ReactPointerEvent<HTMLButtonElement>,
+    taskId: string,
+  ) {
+    if (
+      event.button !== 0 ||
+      (event.target as HTMLElement).closest(".drag-grip,.tree-toggle")
+    )
+      return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const gesture = {
+      taskId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      activated: false,
+      timer: window.setTimeout(() => {
+        const active = taskRowGesture.current;
+        if (!active || active.pointerId !== event.pointerId) return;
+        active.activated = true;
+        suppressTaskClick.current = true;
+        setDraggingId(active.taskId);
+      }, 360),
+    };
+    taskRowGesture.current = gesture;
+  }
+  function moveTaskRowGesture(event: ReactPointerEvent<HTMLButtonElement>) {
+    const gesture = taskRowGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (
+      !gesture.activated &&
+      Math.hypot(
+        event.clientX - gesture.startX,
+        event.clientY - gesture.startY,
+      ) >= 6
+    ) {
+      window.clearTimeout(gesture.timer);
+      gesture.activated = true;
+      suppressTaskClick.current = true;
+      setDraggingId(gesture.taskId);
+    }
+    if (!gesture.activated) return;
+    event.preventDefault();
+    updatePointerDrop(event, gesture.taskId);
+  }
+  function endTaskRowGesture(event: ReactPointerEvent<HTMLButtonElement>) {
+    const gesture = taskRowGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    window.clearTimeout(gesture.timer);
+    taskRowGesture.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    if (!gesture.activated) return;
+    const row = pointerTarget(event);
+    const target = orderedTasks.find((task) => task.id === row?.dataset.taskId);
+    if (target && row) {
+      const bounds = row.getBoundingClientRect();
+      void applyReorder(
+        target,
+        event.clientX > bounds.left + Math.min(150, bounds.width * 0.34),
+        gesture.taskId,
+      );
+    } else resetDrag();
+    window.setTimeout(() => {
+      suppressTaskClick.current = false;
+    }, 0);
+  }
+  function openTaskFromTable(
+    event: React.MouseEvent<HTMLElement>,
+    task: Task,
+  ) {
+    if (
+      suppressTaskClick.current ||
+      (event.target as HTMLElement).closest(".drag-grip,.tree-toggle")
+    )
+      return;
+    setSelected(task);
+  }
+  function beginTimelinePan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    const timeline = timelineScrollRef.current;
+    const desktop = ganttDesktopRef.current;
+    if (!timeline || !desktop) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    timelinePan.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: timeline.scrollLeft,
+      scrollTop: desktop.scrollTop,
+      pageY: window.scrollY,
+      moved: false,
+    };
+  }
+  function moveTimelinePan(event: ReactPointerEvent<HTMLDivElement>) {
+    const pan = timelinePan.current;
+    const timeline = timelineScrollRef.current;
+    const desktop = ganttDesktopRef.current;
+    if (!pan || pan.pointerId !== event.pointerId || !timeline || !desktop)
+      return;
+    const deltaX = event.clientX - pan.startX;
+    const deltaY = event.clientY - pan.startY;
+    if (!pan.moved && Math.hypot(deltaX, deltaY) < 4) return;
+    pan.moved = true;
+    event.preventDefault();
+    timeline.scrollLeft = pan.scrollLeft - deltaX;
+    if (desktop.scrollHeight > desktop.clientHeight + 1)
+      desktop.scrollTop = pan.scrollTop - deltaY;
+    else window.scrollTo({ top: pan.pageY - deltaY });
+  }
+  function endTimelinePan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (timelinePan.current?.pointerId !== event.pointerId) return;
+    timelinePan.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
   if (!tasks.length)
@@ -649,7 +826,7 @@ export function Schedule({
           </div>
           <div>
             <span>TÉRMINO PREVISTO</span>
-            <strong>{formatDate(project.end)}</strong>
+            <strong>{formatDate(timelineEnd)}</strong>
           </div>
           <div>
             <span>CAMINHO CRÍTICO</span>
@@ -658,7 +835,7 @@ export function Schedule({
             </strong>
           </div>
         </div>
-        <div className="gantt-desktop">
+        <div className="gantt-desktop" ref={ganttDesktopRef}>
           <div className="gantt-task-panel">
             <div className="task-table-head">
               <span>EAP</span>
@@ -678,20 +855,18 @@ export function Schedule({
               return (
                 <div
                   data-task-id={task.id}
-                  draggable
-                  onDragStart={(event) => {
-                    setDraggingId(task.id);
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragOver={(event) => updateDropIntent(event, task.id)}
-                  onDrop={(event) => void applyDrop(event, task)}
-                  onDragEnd={resetDrag}
                   className={`gantt-task-line status-${status} ${childCount ? "is-parent" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${task.critical ? "critical" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
                   key={task.id}
                 >
                   <button
                     className="task-row"
-                    onClick={() => setSelected(task)}
+                    onPointerDown={(event) =>
+                      beginTaskRowGesture(event, task.id)
+                    }
+                    onPointerMove={moveTaskRowGesture}
+                    onPointerUp={endTaskRowGesture}
+                    onPointerCancel={endTaskRowGesture}
+                    onClick={(event) => openTaskFromTable(event, task)}
                   >
                     <span className="task-eap-cell">
                       <span
@@ -784,7 +959,14 @@ export function Schedule({
               );
             })}
           </div>
-          <div className="gantt-timeline-scroll">
+          <div
+            className="gantt-timeline-scroll"
+            ref={timelineScrollRef}
+            onPointerDown={beginTimelinePan}
+            onPointerMove={moveTimelinePan}
+            onPointerUp={endTimelinePan}
+            onPointerCancel={endTimelinePan}
+          >
             <div
               className={`gantt-timeline-canvas zoom-${zoom === "Visão geral" ? "overview" : zoom.toLowerCase()}`}
               style={
@@ -839,7 +1021,7 @@ export function Schedule({
                         3,
                         Math.min(
                           997,
-                          ((daysBetween(project.start, value) + (finish ? 1 : 0)) /
+                          ((daysBetween(timelineStart, value) + (finish ? 1 : 0)) /
                             projectDays) *
                             1000,
                         ),
@@ -849,7 +1031,14 @@ export function Schedule({
                     const sourceY = sourceIndex * 44 + 22;
                     const targetY = targetIndex * 44 + 22;
                     const rowDirection = targetY >= sourceY ? 1 : -1;
-                    const laneOffset = (targetIndex % 3) * 3;
+                    const dependencyIndex = visible
+                      .slice(0, targetIndex + 1)
+                      .filter((candidate) =>
+                        visible.some(
+                          (source) => source.id === candidate.dependencyId,
+                        ),
+                      ).length - 1;
+                    const laneOffset = Math.max(0, dependencyIndex % 8) * 4;
                     const sourceExitX = Math.max(
                       4,
                       Math.min(
@@ -864,7 +1053,9 @@ export function Schedule({
                       3,
                       Math.min(997, targetX + (targetUsesFinish ? 7 : -7)),
                     );
-                    const approachY = targetY - rowDirection * 15;
+                    const approachY =
+                      targetY -
+                      rowDirection * (12 + Math.max(0, dependencyIndex % 4) * 3);
                     const dependencyPath = roundedOrthogonalPath(
                       [
                         { x: sourceX, y: sourceY },
@@ -895,8 +1086,7 @@ export function Schedule({
                   return (
                     <button
                       className={`timeline-row status-${status} ${childCount ? "is-parent" : ""} ${task.critical ? "critical" : ""}`}
-                      onClick={() => setSelected(task)}
-                      aria-label={`Editar ${task.name}`}
+                      aria-label={`Período de ${task.name}. Arraste para navegar pelo cronograma.`}
                       key={task.id}
                     >
                       <div className="day-lines">
@@ -986,7 +1176,7 @@ export function Schedule({
               0,
               Math.min(
                 100,
-                (daysBetween(project.start, task.plannedStart) / projectDays) *
+                (daysBetween(timelineStart, task.plannedStart) / projectDays) *
                   100,
               ),
             );
@@ -999,18 +1189,22 @@ export function Schedule({
                 data-task-id={task.id}
                 draggable
                 onDragStart={(event) => {
+                  suppressTaskClick.current = true;
                   setDraggingId(task.id);
                   event.dataTransfer.effectAllowed = "move";
                 }}
                 onDragOver={(event) => updateDropIntent(event, task.id)}
                 onDrop={(event) => void applyDrop(event, task)}
-                onDragEnd={resetDrag}
+                onDragEnd={() => {
+                  resetDrag();
+                  window.setTimeout(() => {
+                    suppressTaskClick.current = false;
+                  }, 0);
+                }}
                 key={task.id}
                 className={`gantt-mobile-card status-${status} ${depth ? "is-child" : ""} ${childCount ? "is-parent" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
                 style={{ "--task-depth": depth } as CSSProperties}
-                onClick={() => {
-                  if (!draggingId) setSelected(task);
-                }}
+                onClick={(event) => openTaskFromTable(event, task)}
               >
                 <span
                   className="drag-grip"
@@ -1209,7 +1403,15 @@ export function Schedule({
                   <small>PREDECESSORA</small>
                   <strong>
                     {selected.dependencyId
-                      ? `${tasks.find((task) => task.id === selected.dependencyId)?.code} · ${selected.dependencyType} ${selected.lagDays ? `+${selected.lagDays}d` : ""}`
+                      ? (() => {
+                          const predecessor = tasks.find(
+                            (task) => task.id === selected.dependencyId,
+                          );
+                          const lag = selected.lagDays ?? 0;
+                          return predecessor
+                            ? `${predecessor.code} · ${predecessor.name} — ${dependencyLabels[selected.dependencyType ?? "FS"]}${lag ? ` · ${lag > 0 ? "+" : ""}${lag}d` : ""}`
+                            : "Atividade predecessora não encontrada";
+                        })()
                       : "Nenhuma"}
                   </strong>
                 </span>
@@ -1282,13 +1484,7 @@ export function Schedule({
                   registre o percentual junto com as evidências.
                 </p>
               </div>
-              <div className="modal-actions split-actions">
-                <button
-                  className="secondary-btn"
-                  onClick={() => setEditing(true)}
-                >
-                  <Icon name="settings" /> Editar dados
-                </button>
+              <div className="modal-actions task-modal-actions">
                 <button
                   className="danger-btn"
                   disabled={
@@ -1297,14 +1493,14 @@ export function Schedule({
                   }
                   onClick={() => setConfirmDelete(true)}
                 >
-                  Excluir atividade
+                  <Icon name="trash" /> Excluir
                 </button>
                 <span />
                 <button
                   className="secondary-btn"
-                  onClick={() => setSelected(null)}
+                  onClick={() => setEditing(true)}
                 >
-                  Fechar
+                  <Icon name="edit" /> Editar
                 </button>
                 {!tasks.some((task) => task.parentId === selected.id) && (
                   <button
@@ -1315,7 +1511,7 @@ export function Schedule({
                       setToast("Progresso manual atualizado.");
                     }}
                   >
-                    Salvar avanço
+                    <Icon name="check" /> Salvar avanço
                   </button>
                 )}
               </div>
@@ -1702,7 +1898,6 @@ function TaskForm({
         <input
           type="date"
           min={project.start}
-          max={project.end}
           required
           disabled={derivesPeriod}
           value={plannedStart}
@@ -1725,7 +1920,6 @@ function TaskForm({
         <input
           type="date"
           min={plannedStart}
-          max={project.end}
           required
           disabled={milestone || derivesPeriod}
           value={milestone ? plannedStart : plannedEnd}

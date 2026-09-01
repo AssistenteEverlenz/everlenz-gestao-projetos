@@ -68,6 +68,27 @@ export function workingDuration(
   return Math.max(1, count);
 }
 
+function workingShiftBetween(
+  from: string,
+  to: string,
+  workDays?: number[],
+) {
+  if (from === to) return 0;
+  const direction = from < to ? 1 : -1;
+  let cursor = from;
+  let amount = 0;
+  let guard = 0;
+  while (
+    (direction > 0 ? cursor < to : cursor > to) &&
+    guard < 20_000
+  ) {
+    cursor = nextWorkingDay(cursor, workDays, direction);
+    amount += direction;
+    guard += 1;
+  }
+  return amount;
+}
+
 export function rescheduleTasks(
   tasks: Task[],
   previousDays: number[] | undefined,
@@ -140,7 +161,9 @@ export function rescheduleTaskSuccessors(
   );
   result = normalizeTaskHierarchy(result);
   let byId = new Map(result.map((task) => [task.id, task]));
+  const editedDependencyId = byId.get(changedTaskId)?.dependencyId;
   const queue = [
+    ...(editedDependencyId ? [editedDependencyId] : []),
     changedTaskId,
     ...result
       .filter(
@@ -180,7 +203,54 @@ export function rescheduleTaskSuccessors(
         ]),
       );
 
-      if (relation === "FS" || relation === "SS") {
+      const descendantIds = new Set<string>();
+      const collectDescendants = (parentId: string) => {
+        result
+          .filter((task) => task.parentId === parentId)
+          .forEach((child) => {
+            if (descendantIds.has(child.id)) return;
+            descendantIds.add(child.id);
+            collectDescendants(child.id);
+          });
+      };
+      collectDescendants(successor.id);
+
+      if (descendantIds.size) {
+        const targetDate =
+          relation === "FS" || relation === "SS"
+            ? shiftWorkingDays(
+                relation === "FS"
+                  ? nextWorkingDay(predecessor.plannedEnd, workDays)
+                  : predecessor.plannedStart,
+                lag,
+                workDays,
+              )
+            : shiftWorkingDays(
+                relation === "FF"
+                  ? predecessor.plannedEnd
+                  : predecessor.plannedStart,
+                lag,
+                workDays,
+              );
+        const currentAnchor =
+          relation === "FS" || relation === "SS"
+            ? successor.plannedStart
+            : successor.plannedEnd;
+        const shift = workingShiftBetween(currentAnchor, targetDate, workDays);
+        result.forEach((task) => {
+          if (!descendantIds.has(task.id)) return;
+          task.plannedStart = shiftWorkingDays(
+            task.plannedStart,
+            shift,
+            workDays,
+          );
+          task.plannedEnd = shiftWorkingDays(
+            task.plannedEnd,
+            shift,
+            workDays,
+          );
+        });
+      } else if (relation === "FS" || relation === "SS") {
         const anchor =
           relation === "FS"
             ? nextWorkingDay(predecessor.plannedEnd, workDays)
