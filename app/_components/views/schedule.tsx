@@ -225,40 +225,45 @@ export function Schedule({
     const weight = measurable.reduce((sum, task) => sum + task.weight, 0);
     return weight ? Math.round(weighted / weight) : 0;
   }, [tasks]);
-  const timelineLabels = useMemo(
-    () =>
-      Array.from(
-        { length: zoom === "Dias" ? Math.min(31, projectDays) : zoom === "Semanas" ? 12 : 8 },
+  const timelineLabels = useMemo(() => {
+    const shortDate = (date: Date) =>
+      date
+        .toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+        .toUpperCase()
+        .replace(" DE ", " ");
+    const dateAt = (offset: number) => {
+      const date = toDate(project.start);
+      date.setDate(date.getDate() + offset);
+      return date;
+    };
+
+    if (zoom === "Dias") {
+      return Array.from({ length: projectDays }, (_, index) =>
+        shortDate(dateAt(index)),
+      );
+    }
+    if (zoom === "Semanas") {
+      return Array.from(
+        { length: Math.ceil(projectDays / 7) },
         (_, index) => {
-        const date = toDate(project.start);
-        date.setDate(
-          date.getDate() +
-            index *
-              Math.max(
-                1,
-                Math.floor(
-                  projectDays /
-                    (zoom === "Dias"
-                      ? Math.min(31, projectDays)
-                      : zoom === "Semanas"
-                        ? 12
-                        : 8),
-                ),
-              ),
-        );
-        return date
-          .toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
-          .toUpperCase()
-          .replace(" DE ", " ");
-      }),
-    [project.start, projectDays, zoom],
-  );
+          const startOffset = index * 7;
+          const endOffset = Math.min(projectDays - 1, startOffset + 6);
+          return `${shortDate(dateAt(startOffset))} – ${shortDate(dateAt(endOffset))}`;
+        },
+      );
+    }
+
+    const sections = Math.min(8, projectDays);
+    return Array.from({ length: sections }, (_, index) =>
+      shortDate(dateAt(Math.floor((index * projectDays) / sections))),
+    );
+  }, [project.start, projectDays, zoom]);
   const timelineWidth =
     zoom === "Dias"
-      ? Math.min(9000, Math.max(1100, projectDays * 30))
+      ? projectDays * 44
       : zoom === "Semanas"
-        ? Math.min(5200, Math.max(820, projectDays * 14))
-        : 620;
+        ? Math.ceil(projectDays / 7) * 132
+        : undefined;
   const zoomIndex = zoomLevels.indexOf(zoom);
 
   useEffect(() => {
@@ -653,11 +658,8 @@ export function Schedule({
             </strong>
           </div>
         </div>
-        <div className="gantt-scroll">
-          <div
-            className={`gantt-grid zoom-${zoom === "Visão geral" ? "overview" : zoom.toLowerCase()}`}
-            style={{ "--timeline-width": `${timelineWidth}px` } as CSSProperties}
-          >
+        <div className="gantt-desktop">
+          <div className="gantt-task-panel">
             <div className="task-table-head">
               <span>EAP</span>
               <span>ATIVIDADE</span>
@@ -667,104 +669,6 @@ export function Schedule({
               <span>TÉRMINO</span>
               <span>STATUS</span>
             </div>
-            <div className="timeline-head">
-              {timelineLabels.map((label, index) => (
-                <span key={`${label}-${index}`}>{label}</span>
-              ))}
-            </div>
-            <svg
-              className="gantt-dependency-layer"
-              viewBox={`0 0 1000 ${Math.max(44, visible.length * 44)}`}
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <defs>
-                <marker
-                  id="dependency-arrow"
-                  markerWidth="7"
-                  markerHeight="7"
-                  refX="6"
-                  refY="3.5"
-                  orient="auto"
-                >
-                  <path d="M0,0 L7,3.5 L0,7 Z" />
-                </marker>
-              </defs>
-              {visible.map((task, targetIndex) => {
-                const sourceIndex = visible.findIndex(
-                  (item) => item.id === task.dependencyId,
-                );
-                if (sourceIndex < 0) return null;
-                const predecessor = visible[sourceIndex];
-                const relation = task.dependencyType ?? "FS";
-                const sourceDate =
-                  relation === "FS" || relation === "FF"
-                    ? predecessor.plannedEnd
-                    : predecessor.plannedStart;
-                const targetDate =
-                  relation === "FS" || relation === "SS"
-                    ? task.plannedStart
-                    : task.plannedEnd;
-                const sourceX = Math.max(
-                  0,
-                  Math.min(
-                    995,
-                    ((daysBetween(project.start, sourceDate) +
-                      (relation === "FS" || relation === "FF" ? 1 : 0)) /
-                      projectDays) *
-                      1000,
-                  ),
-                );
-                const targetX = Math.max(
-                  0,
-                  Math.min(
-                    995,
-                    ((daysBetween(project.start, targetDate) +
-                      (relation === "FF" || relation === "SF" ? 1 : 0)) /
-                      projectDays) *
-                      1000,
-                  ),
-                );
-                const sourceY = sourceIndex * 44 + 22;
-                const targetY = targetIndex * 44 + 22;
-                const sourceUsesFinish = relation === "FS" || relation === "FF";
-                const targetUsesFinish = relation === "FF" || relation === "SF";
-                const rowDirection = targetY >= sourceY ? 1 : -1;
-                const laneOffset = (targetIndex % 3) * 4;
-                const sourceExitX = Math.max(
-                  5,
-                  Math.min(
-                    995,
-                    sourceUsesFinish
-                      ? sourceX + 14 + laneOffset
-                      : sourceX - 14 - laneOffset,
-                  ),
-                );
-                const targetEntryX = Math.max(
-                  5,
-                  Math.min(995, targetX + (targetUsesFinish ? 10 : -10)),
-                );
-                // Use the free strip above/below the destination bar so long
-                // dependency routes do not cross task periods.
-                const approachY = targetY - rowDirection * 15;
-                const dependencyPath = roundedOrthogonalPath([
-                  { x: sourceX, y: sourceY },
-                  { x: sourceExitX, y: sourceY },
-                  { x: sourceExitX, y: approachY },
-                  { x: targetEntryX, y: approachY },
-                  { x: targetEntryX, y: targetY },
-                  { x: targetX, y: targetY },
-                ]);
-                return (
-                  <path
-                    className="dependency-path"
-                    key={`${predecessor.id}-${task.id}`}
-                    d={dependencyPath}
-                    markerEnd="url(#dependency-arrow)"
-                  />
-                );
-              })}
-            </svg>
             {visible.map((task) => {
               const childCount = orderedTasks.filter(
                 (item) => item.parentId === task.id,
@@ -782,7 +686,7 @@ export function Schedule({
                   onDragOver={(event) => updateDropIntent(event, task.id)}
                   onDrop={(event) => void applyDrop(event, task)}
                   onDragEnd={resetDrag}
-                  className={`gantt-row status-${status} ${childCount ? "is-parent" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${task.critical ? "critical" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
+                  className={`gantt-task-line status-${status} ${childCount ? "is-parent" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${task.critical ? "critical" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
                   key={task.id}
                 >
                   <button
@@ -854,8 +758,8 @@ export function Schedule({
                             background: palette.progress,
                           }}
                         />
+                        <strong>{task.progress}%</strong>
                       </i>
-                      <strong>{task.progress}%</strong>
                     </span>
                     <span className="task-date-cell">
                       {formatDate(task.plannedStart)}
@@ -876,63 +780,175 @@ export function Schedule({
                       />
                     </span>
                   </button>
-                  <button
-                    className="timeline-row"
-                    onClick={() => setSelected(task)}
-                    aria-label={`Editar ${task.name}`}
-                  >
-                    <div className="day-lines">
-                      {Array.from({ length: 16 }, (_, day) => (
-                        <i key={day} />
-                      ))}
-                    </div>
-                    {showBaseline && (
-                      <span
-                        className="baseline-bar"
-                        style={barStyle(task, true)}
-                      />
-                    )}
-                    {task.milestone ? (
-                      <span
-                        className="milestone"
-                        style={{
-                          ...barStyle(task),
-                          width: undefined,
-                          background: palette.period,
-                        }}
-                      />
-                    ) : childCount > 0 ? (
-                      <span
-                        className="gantt-parent-bar"
-                        style={{
-                          ...barStyle(task),
-                          color: palette.period,
-                          background: palette.period,
-                        }}
-                      >
-                        <b>{task.progress}%</b>
-                      </span>
-                    ) : (
-                      <span
-                        className="gantt-bar"
-                        style={{
-                          ...barStyle(task),
-                          background: palette.period,
-                        }}
-                      >
-                        <i
-                          style={{
-                            width: `${task.progress}%`,
-                            background: palette.progress,
-                          }}
-                        />
-                        {duration(task) > 2 && <b>{task.progress}%</b>}
-                      </span>
-                    )}
-                  </button>
                 </div>
               );
             })}
+          </div>
+          <div className="gantt-timeline-scroll">
+            <div
+              className={`gantt-timeline-canvas zoom-${zoom === "Visão geral" ? "overview" : zoom.toLowerCase()}`}
+              style={
+                {
+                  width: timelineWidth ? `${timelineWidth}px` : "100%",
+                  minWidth: "100%",
+                  "--timeline-columns": timelineLabels.length,
+                } as CSSProperties
+              }
+            >
+              <div className="timeline-head">
+                {timelineLabels.map((label, index) => (
+                  <span key={`${label}-${index}`}>{label}</span>
+                ))}
+              </div>
+              <div className="gantt-timeline-body">
+                <svg
+                  className="gantt-dependency-layer"
+                  viewBox={`0 0 1000 ${Math.max(44, visible.length * 44)}`}
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <defs>
+                    <marker
+                      id="dependency-arrow"
+                      markerWidth="7"
+                      markerHeight="7"
+                      refX="6"
+                      refY="3.5"
+                      orient="auto"
+                    >
+                      <path d="M0,0 L7,3.5 L0,7 Z" />
+                    </marker>
+                  </defs>
+                  {visible.map((task, targetIndex) => {
+                    const sourceIndex = visible.findIndex(
+                      (item) => item.id === task.dependencyId,
+                    );
+                    if (sourceIndex < 0) return null;
+                    const predecessor = visible[sourceIndex];
+                    const relation = task.dependencyType ?? "FS";
+                    const sourceUsesFinish = relation === "FS" || relation === "FF";
+                    const targetUsesFinish = relation === "FF" || relation === "SF";
+                    const sourceDate = sourceUsesFinish
+                      ? predecessor.plannedEnd
+                      : predecessor.plannedStart;
+                    const targetDate = targetUsesFinish
+                      ? task.plannedEnd
+                      : task.plannedStart;
+                    const dateX = (value: string, finish: boolean) =>
+                      Math.max(
+                        3,
+                        Math.min(
+                          997,
+                          ((daysBetween(project.start, value) + (finish ? 1 : 0)) /
+                            projectDays) *
+                            1000,
+                        ),
+                      );
+                    const sourceX = dateX(sourceDate, sourceUsesFinish);
+                    const targetX = dateX(targetDate, targetUsesFinish);
+                    const sourceY = sourceIndex * 44 + 22;
+                    const targetY = targetIndex * 44 + 22;
+                    const rowDirection = targetY >= sourceY ? 1 : -1;
+                    const laneOffset = (targetIndex % 3) * 3;
+                    const sourceExitX = Math.max(
+                      4,
+                      Math.min(
+                        996,
+                        sourceX +
+                          (sourceUsesFinish
+                            ? 10 + laneOffset
+                            : -10 - laneOffset),
+                      ),
+                    );
+                    const targetApproachX = Math.max(
+                      3,
+                      Math.min(997, targetX + (targetUsesFinish ? 7 : -7)),
+                    );
+                    const approachY = targetY - rowDirection * 15;
+                    const dependencyPath = roundedOrthogonalPath(
+                      [
+                        { x: sourceX, y: sourceY },
+                        { x: sourceExitX, y: sourceY },
+                        { x: sourceExitX, y: approachY },
+                        { x: targetApproachX, y: approachY },
+                        { x: targetApproachX, y: targetY },
+                        { x: targetX, y: targetY },
+                      ],
+                      3,
+                    );
+                    return (
+                      <path
+                        className="dependency-path"
+                        key={`${predecessor.id}-${task.id}`}
+                        d={dependencyPath}
+                        markerEnd="url(#dependency-arrow)"
+                      />
+                    );
+                  })}
+                </svg>
+                {visible.map((task) => {
+                  const childCount = orderedTasks.filter(
+                    (item) => item.parentId === task.id,
+                  ).length;
+                  const status = taskExecutionStatus(task);
+                  const palette = taskStatusPalette[status];
+                  return (
+                    <button
+                      className={`timeline-row status-${status} ${childCount ? "is-parent" : ""} ${task.critical ? "critical" : ""}`}
+                      onClick={() => setSelected(task)}
+                      aria-label={`Editar ${task.name}`}
+                      key={task.id}
+                    >
+                      <div className="day-lines">
+                        {timelineLabels.map((_, column) => (
+                          <i key={column} />
+                        ))}
+                      </div>
+                      {showBaseline && (
+                        <span className="baseline-bar" style={barStyle(task, true)} />
+                      )}
+                      {task.milestone ? (
+                        <span
+                          className="milestone"
+                          style={{
+                            ...barStyle(task),
+                            width: undefined,
+                            background: palette.period,
+                          }}
+                        />
+                      ) : childCount > 0 ? (
+                        <span
+                          className="gantt-parent-bar"
+                          style={{
+                            ...barStyle(task),
+                            color: palette.period,
+                            background: palette.period,
+                          }}
+                        >
+                          <b>{task.progress}%</b>
+                        </span>
+                      ) : (
+                        <span
+                          className="gantt-bar"
+                          style={{
+                            ...barStyle(task),
+                            background: palette.period,
+                          }}
+                        >
+                          <i
+                            style={{
+                              width: `${task.progress}%`,
+                              background: palette.progress,
+                            }}
+                          />
+                          {duration(task) > 2 && <b>{task.progress}%</b>}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
         <div
