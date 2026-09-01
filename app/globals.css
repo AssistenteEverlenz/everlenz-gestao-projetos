@@ -1156,7 +1156,11 @@ html[data-theme="dark"] .gantt-row.is-parent .timeline-row { background:color-mi
 .gantt-task-line.drop-as-child::after { content:"Tornar subitem"; background:var(--accent-dark); }
 .gantt-task-line.drop-as-root::after { content:"Mover para nível principal"; }
 .task-row { height:44px; min-height:44px; max-height:44px; border-right:0; }
-.task-name-cell { display:grid!important; align-content:center; }
+.task-name-cell {
+  display:grid!important;
+  align-content:center;
+  padding-left:calc(9px + var(--task-indent,0px))!important;
+}
 .task-name-cell>strong,.task-name-cell>small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-progress-cell { display:grid!important; place-items:center; padding:0 10px!important; }
 .task-progress-cell>i { position:relative; width:100%; height:22px; overflow:hidden; border-radius:7px; background:color-mix(in srgb,var(--text) 10%,var(--surface-solid)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--line) 80%,transparent); }
@@ -1213,6 +1217,7 @@ html[data-theme="dark"] .timeline-row.is-parent { background:color-mix(in srgb,v
   .gantt-desktop { --gantt-table-width:700px; }
   .task-table-head,.task-row { grid-template-columns:94px minmax(150px,1fr) 62px 108px 88px 88px 50px; }
   .task-table-head>span,.task-row>span { padding-inline:6px; }
+  .task-name-cell { padding-left:calc(6px + var(--task-indent,0px))!important; }
   .task-table-head>span { font-size:9px; letter-spacing:.035em; }
   .task-date-cell { font-size:10px; }
 }

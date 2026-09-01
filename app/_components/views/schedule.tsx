@@ -902,7 +902,11 @@ export function Schedule({
                     </span>
                     <span
                       className="task-name-cell"
-                      style={{ paddingLeft: taskDepth(task) * 18 }}
+                      style={
+                        {
+                          "--task-indent": `${taskDepth(task) * 18}px`,
+                        } as CSSProperties
+                      }
                     >
                       <strong>{task.name}</strong>
                       <small>
