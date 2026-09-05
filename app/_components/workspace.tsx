@@ -1426,7 +1426,6 @@ export function Workspace() {
         >
           <BrandSymbols
             organizationLogoUrl={workspace?.project.organizationLogoUrl}
-            projectLogoUrl={workspace?.project.logoUrl}
           />
           <span>
             <strong>em dia</strong>
@@ -1558,7 +1557,6 @@ export function Workspace() {
           <div className="mobile-brand">
             <BrandSymbols
               organizationLogoUrl={workspace?.project.organizationLogoUrl}
-              projectLogoUrl={workspace?.project.logoUrl}
             />
             <strong>
               em dia <span>BY EVERLENZ</span>

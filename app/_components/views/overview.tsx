@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- logo configurável do projeto vem do storage */
 
 import { useState } from "react";
 import { Icon } from "../icons";
@@ -31,7 +32,21 @@ export function Overview({ project, tasks, entries, navigate, metrics }: Props) 
   return <div className="view-stack overview-view">
     <section className="project-hero glass">
       <div className="hero-main">
-        <div className="hero-title-row"><div><span className="overline">OBRA EM ANDAMENTO</span><h2>{project.name}</h2><p><Icon name="building" /> {project.client} <i /> {project.location}</p></div><StatusBadge value={project.status} /></div>
+        <div className="hero-title-row">
+          <div className="hero-project-identity">
+            {project.logoUrl && (
+              <span className="hero-project-logo">
+                <img src={project.logoUrl} alt={`Logo ${project.client}`} />
+              </span>
+            )}
+            <div>
+              <span className="overline">OBRA EM ANDAMENTO</span>
+              <h2>{project.name}</h2>
+              <p><Icon name="building" /> {project.client} <i /> {project.location}</p>
+            </div>
+          </div>
+          <StatusBadge value={project.status} />
+        </div>
         <div className="hero-progress"><ProgressRing value={metrics.overall} size={78}/><div><strong>Avanço físico geral</strong><p>{tasks.length ? tasks.length + " atividades estruturadas" : "Cronograma aguardando atividades"}</p><span className="variance">{metrics.active} em execução</span></div></div>
       </div>
       <div className="hero-dates"><div><span>INÍCIO</span><strong>{formatDate(project.start)}</strong></div><div><span>PREVISÃO DE TÉRMINO</span><strong>{formatDate(project.end)}</strong></div><div><span>DIAS DECORRIDOS</span><strong>{elapsedDays} <small>de {totalDays}</small></strong></div><button className="secondary-btn" onClick={() => navigate("schedule")}>Abrir cronograma <Icon name="arrow" /></button></div>

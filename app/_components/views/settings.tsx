@@ -62,8 +62,34 @@ export function Settings({
 
   return (
     <div className="view-stack settings-view">
-      <section className="settings-grid">
-        <div className="panel glass settings-card">
+      <div className="settings-layout">
+        <aside className="panel glass settings-nav" aria-label="Seções das configurações">
+          <div className="settings-nav-heading">
+            <span className="overline">PREFERÊNCIAS</span>
+            <strong>Central de configurações</strong>
+            <p>Ajuste a experiência, o projeto e a sua conta.</p>
+          </div>
+          <nav>
+            <a href="#settings-appearance">
+              <Icon name="sun" />
+              <span><strong>Aparência</strong><small>Tema da interface</small></span>
+            </a>
+            <a href="#settings-branding">
+              <Icon name="building" />
+              <span><strong>Identidade visual</strong><small>Marcas e logotipos</small></span>
+            </a>
+            <a href="#settings-project">
+              <Icon name="calendar" />
+              <span><strong>Projeto</strong><small>Relatórios e alertas</small></span>
+            </a>
+            <a href="#settings-account">
+              <Icon name="lock" />
+              <span><strong>Conta e ajuda</strong><small>Segurança e orientação</small></span>
+            </a>
+          </nav>
+        </aside>
+        <section className="panel glass settings-grid">
+        <div className="settings-card" id="settings-appearance">
           <span className="settings-icon">
             <Icon name="sun" />
           </span>
@@ -91,6 +117,7 @@ export function Settings({
         </div>
         <LogoSettingsCard
           scope="organization"
+          id="settings-branding"
           title="Marca da empresa"
           description="Aparece no acesso, carregamento e identidade principal da plataforma."
           currentUrl={project?.organizationLogoUrl}
@@ -98,18 +125,7 @@ export function Settings({
           disabled={!canManage}
           onSave={saveBrandLogo}
         />
-        {project && (
-          <LogoSettingsCard
-            scope="project"
-            title="Logo do projeto ou cliente"
-            description={`Identifica ${project.name} ao lado da marca Everlenz em telas e documentos.`}
-            currentUrl={project.logoUrl}
-            fallbackUrl="/natreb-mark.png"
-            disabled={!canManage}
-            onSave={saveBrandLogo}
-          />
-        )}
-        <div className="panel glass settings-card">
+        <div className="settings-card" id="settings-project">
           <span className="settings-icon">
             <Icon name="report" />
           </span>
@@ -129,7 +145,7 @@ export function Settings({
             <input defaultValue="Informação técnica com evidência de campo" />
           </label>
         </div>
-        <div className="panel glass settings-card">
+        <div className="settings-card">
           <span className="settings-icon">
             <Icon name="bell" />
           </span>
@@ -155,7 +171,7 @@ export function Settings({
             <i />
           </label>
         </div>
-        <div className="panel glass settings-card">
+        <div className="settings-card">
           <span className="settings-icon">
             <Icon name="calendar" />
           </span>
@@ -176,8 +192,19 @@ export function Settings({
             <input type="number" defaultValue="8" />
           </label>
         </div>
+        {project && (
+          <LogoSettingsCard
+            scope="project"
+            title="Logo do cliente neste projeto"
+            description={`Usada somente em ${project.name}, na identificação, nos cartões e seletores desta obra.`}
+            currentUrl={project.logoUrl}
+            fallbackUrl="/emdia.svg"
+            disabled={!canManage}
+            onSave={saveBrandLogo}
+          />
+        )}
         {isSupabaseConfigured() && (
-          <form className="panel glass settings-card" onSubmit={changePassword}>
+          <form className="settings-card" id="settings-account" onSubmit={changePassword}>
             <span className="settings-icon">
               <Icon name="lock" />
             </span>
@@ -212,7 +239,7 @@ export function Settings({
             </button>
           </form>
         )}
-        <div className="panel glass settings-card" data-tour="instrucoes">
+        <div className="settings-card" data-tour="instrucoes">
           <span className="settings-icon">
             <Icon name="info" />
           </span>
@@ -230,7 +257,8 @@ export function Settings({
             Rever apresentação
           </button>
         </div>
-      </section>
+        </section>
+      </div>
       <div className="settings-actions">
         <button
           className="primary-btn"
@@ -255,6 +283,7 @@ export function Settings({
 
 function LogoSettingsCard({
   scope,
+  id,
   title,
   description,
   currentUrl,
@@ -263,6 +292,7 @@ function LogoSettingsCard({
   onSave,
 }: {
   scope: "organization" | "project";
+  id?: string;
   title: string;
   description: string;
   currentUrl?: string;
@@ -311,7 +341,7 @@ function LogoSettingsCard({
   }
 
   return (
-    <section className="panel glass settings-card branding-card">
+    <section className="settings-card branding-card" id={id}>
       <span className="settings-icon">
         <Icon name="building" />
       </span>

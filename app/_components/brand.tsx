@@ -2,11 +2,9 @@
 
 export function BrandSymbols({
   organizationLogoUrl,
-  projectLogoUrl,
   className = "",
 }: {
   organizationLogoUrl?: string;
-  projectLogoUrl?: string;
   className?: string;
 }) {
   return (
@@ -18,7 +16,7 @@ export function BrandSymbols({
         <img src={organizationLogoUrl || "/everlenz-mark.png"} alt="Everlenz" />
       </span>
       <span className="brand-symbol partner-brand">
-        <img src={projectLogoUrl || "/natreb-mark.png"} alt="Natreb" />
+        <img src="/natreb-mark.png" alt="Natreb" />
       </span>
     </span>
   );
