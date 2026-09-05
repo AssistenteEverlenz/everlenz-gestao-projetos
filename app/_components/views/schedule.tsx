@@ -55,6 +55,7 @@ type Props = {
   updateTaskProgress: (id: string, progress: number) => Promise<void>;
   updateProjectWorkDays: (workDays: number[]) => Promise<void>;
   refreshSchedule: () => Promise<void>;
+  refreshTaskBaselines: () => Promise<void>;
   setToast: (value: string) => void;
 };
 
@@ -122,6 +123,37 @@ const filterStatusLabels: Record<TaskExecutionStatus, string> = {
   done: "Concluída",
 };
 
+type TaskColumnKey =
+  | "eap"
+  | "activity"
+  | "duration"
+  | "progress"
+  | "start"
+  | "end"
+  | "status";
+
+const taskColumnDefaults: Record<TaskColumnKey, number> = {
+  eap: 104,
+  activity: 230,
+  duration: 72,
+  progress: 126,
+  start: 100,
+  end: 100,
+  status: 58,
+};
+
+const taskColumnLimits: Record<TaskColumnKey, [number, number]> = {
+  eap: [90, 240],
+  activity: [160, 520],
+  duration: [64, 140],
+  progress: [100, 210],
+  start: [90, 180],
+  end: [90, 180],
+  status: [52, 110],
+};
+
+const taskColumnKeys = Object.keys(taskColumnDefaults) as TaskColumnKey[];
+
 type RoutePoint = { x: number; y: number };
 
 function roundedOrthogonalPath(points: RoutePoint[], radius = 4) {
@@ -173,6 +205,7 @@ export function Schedule({
   updateTaskProgress,
   updateProjectWorkDays,
   refreshSchedule,
+  refreshTaskBaselines,
   setToast,
 }: Props) {
   const [selected, setSelected] = useState<Task | null>(() => {
@@ -185,18 +218,33 @@ export function Schedule({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
-  const [taskPanelWidth, setTaskPanelWidth] = useState(() => {
-    if (typeof window === "undefined") return 790;
-    const stored = Number(window.localStorage.getItem("emdia-gantt-table-width"));
-    const maximum = Math.max(650, Math.min(1100, window.innerWidth - 300));
-    const preferred =
-      stored >= 650 && stored <= 1100
-        ? stored
-        : window.innerWidth <= 1250
-          ? 700
-          : 790;
-    return Math.min(preferred, maximum);
+  const [taskColumnWidths, setTaskColumnWidths] = useState<
+    Record<TaskColumnKey, number>
+  >(() => {
+    if (typeof window === "undefined") return taskColumnDefaults;
+    const next = { ...taskColumnDefaults };
+    const legacyEap = Number(
+      window.localStorage.getItem("emdia-gantt-eap-width"),
+    );
+    if (legacyEap >= 90 && legacyEap <= 240) next.eap = legacyEap;
+    try {
+      const stored = JSON.parse(
+        window.localStorage.getItem("emdia-gantt-column-widths") ?? "{}",
+      ) as Partial<Record<TaskColumnKey, number>>;
+      taskColumnKeys.forEach((key) => {
+        const value = Number(stored[key]);
+        const [minimum, maximum] = taskColumnLimits[key];
+        if (value >= minimum && value <= maximum) next[key] = value;
+      });
+    } catch {
+      // Preferência antiga ou inválida: mantém as larguras seguras.
+    }
+    return next;
   });
+  const taskPanelWidth = taskColumnKeys.reduce(
+    (sum, key) => sum + taskColumnWidths[key],
+    0,
+  );
   const [editing, setEditing] = useState(false);
   const [historyTask, setHistoryTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
@@ -212,6 +260,7 @@ export function Schedule({
   const [filters, setFilters] = useState<GanttFilters>(emptyGanttFilters);
   const [filterOpen, setFilterOpen] = useState(false);
   const [refreshingSchedule, setRefreshingSchedule] = useState(false);
+  const [refreshingBaselines, setRefreshingBaselines] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -243,17 +292,12 @@ export function Schedule({
     startX: number;
     startWidth: number;
   } | null>(null);
-  const eapColumnResize = useRef<{
+  const taskFieldResize = useRef<{
+    column: TaskColumnKey;
     pointerId: number;
     startX: number;
     startWidth: number;
-    startPanelWidth: number;
   } | null>(null);
-  const [eapColumnWidth, setEapColumnWidth] = useState(() => {
-    if (typeof window === "undefined") return 104;
-    const stored = Number(window.localStorage.getItem("emdia-gantt-eap-width"));
-    return stored >= 90 && stored <= 240 ? stored : 104;
-  });
   const taskRowGesture = useRef<{
     taskId: string;
     pointerId: number;
@@ -502,8 +546,7 @@ export function Schedule({
       left: `${Math.min(99, (daysBetween(timelineStart, startValue) / projectDays) * 100)}%`,
       width: `${Math.max(
         0.8,
-        (((!baseline &&
-          !tasks.some((child) => child.parentId === task.id) &&
+        (((!tasks.some((child) => child.parentId === task.id) &&
           task.durationDays != null
             ? task.durationDays
             : daysBetween(startValue, endValue) + 1) /
@@ -560,6 +603,22 @@ export function Schedule({
       );
     } finally {
       setRefreshingSchedule(false);
+    }
+  }
+  async function runBaselineRefresh() {
+    if (refreshingBaselines) return;
+    setRefreshingBaselines(true);
+    try {
+      await refreshTaskBaselines();
+      setMobileActionsOpen(false);
+    } catch (cause) {
+      setToast(
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível atualizar a linha de base.",
+      );
+    } finally {
+      setRefreshingBaselines(false);
     }
   }
   function removeFilter(kind: string, value?: string) {
@@ -835,11 +894,10 @@ export function Schedule({
       event.currentTarget.releasePointerCapture(event.pointerId);
   }
   function resizeTaskPanel(nextWidth: number) {
-    const desktopWidth = ganttDesktopRef.current?.clientWidth ?? 1320;
-    const maximum = Math.max(650, Math.min(1100, desktopWidth - 240));
-    const width = Math.round(Math.max(650, Math.min(maximum, nextWidth)));
-    setTaskPanelWidth(width);
-    window.localStorage.setItem("emdia-gantt-table-width", String(width));
+    resizeTaskColumn(
+      "activity",
+      taskColumnWidths.activity + (nextWidth - taskPanelWidth),
+    );
   }
   function beginColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
@@ -864,44 +922,82 @@ export function Schedule({
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
   }
-  function resizeEapColumn(nextWidth: number, nextPanelWidth?: number) {
-    const width = Math.round(Math.max(90, Math.min(240, nextWidth)));
-    const panelWidth =
-      nextPanelWidth ?? taskPanelWidth + (width - eapColumnWidth);
-    setEapColumnWidth(width);
-    window.localStorage.setItem("emdia-gantt-eap-width", String(width));
-    resizeTaskPanel(panelWidth);
+  function resizeTaskColumn(column: TaskColumnKey, nextWidth: number) {
+    const [minimum, configuredMaximum] = taskColumnLimits[column];
+    const otherColumnsWidth = taskPanelWidth - taskColumnWidths[column];
+    const desktopWidth = ganttDesktopRef.current?.clientWidth ?? 1440;
+    const availableMaximum = Math.max(
+      minimum,
+      desktopWidth - 240 - otherColumnsWidth,
+    );
+    const maximum = Math.min(configuredMaximum, availableMaximum);
+    const width = Math.round(Math.max(minimum, Math.min(maximum, nextWidth)));
+    const next = { ...taskColumnWidths, [column]: width };
+    setTaskColumnWidths(next);
+    window.localStorage.setItem(
+      "emdia-gantt-column-widths",
+      JSON.stringify(next),
+    );
   }
-  function beginEapColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+  function beginTaskColumnResize(
+    event: ReactPointerEvent<HTMLButtonElement>,
+    column: TaskColumnKey,
+  ) {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    eapColumnResize.current = {
+    taskFieldResize.current = {
+      column,
       pointerId: event.pointerId,
       startX: event.clientX,
-      startWidth: eapColumnWidth,
-      startPanelWidth: taskPanelWidth,
+      startWidth: taskColumnWidths[column],
     };
   }
-  function moveEapColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
-    const resize = eapColumnResize.current;
+  function moveTaskColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    const resize = taskFieldResize.current;
     if (!resize || resize.pointerId !== event.pointerId) return;
     event.preventDefault();
-    const width = Math.max(
-      90,
-      Math.min(240, resize.startWidth + event.clientX - resize.startX),
-    );
-    resizeEapColumn(
-      width,
-      resize.startPanelWidth + (width - resize.startWidth),
+    resizeTaskColumn(
+      resize.column,
+      resize.startWidth + event.clientX - resize.startX,
     );
   }
-  function endEapColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (eapColumnResize.current?.pointerId !== event.pointerId) return;
-    eapColumnResize.current = null;
+  function endTaskColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (taskFieldResize.current?.pointerId !== event.pointerId) return;
+    taskFieldResize.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+  function taskColumnResizeHandle(column: TaskColumnKey, label: string) {
+    const [minimum, maximum] = taskColumnLimits[column];
+    return (
+      <button
+        type="button"
+        className="gantt-field-resizer"
+        role="separator"
+        aria-label={`Ajustar largura da coluna ${label}`}
+        aria-orientation="vertical"
+        aria-valuemin={minimum}
+        aria-valuemax={maximum}
+        aria-valuenow={taskColumnWidths[column]}
+        title={`Arraste para ajustar ${label}. Clique duas vezes para restaurar.`}
+        onPointerDown={(event) => beginTaskColumnResize(event, column)}
+        onPointerMove={moveTaskColumnResize}
+        onPointerUp={endTaskColumnResize}
+        onPointerCancel={endTaskColumnResize}
+        onDoubleClick={() => resizeTaskColumn(column, taskColumnDefaults[column])}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          resizeTaskColumn(
+            column,
+            taskColumnWidths[column] +
+              (event.key === "ArrowRight" ? 12 : -12),
+          );
+        }}
+      />
+    );
   }
 
   if (!tasks.length)
@@ -984,6 +1080,21 @@ export function Schedule({
               <Icon name="refresh" />
             )}
             {refreshingSchedule ? "Recalculando..." : "Atualizar gráfico"}
+          </button>
+          <button
+            className="secondary-btn compact gantt-baseline-refresh-button"
+            disabled={refreshingBaselines}
+            onClick={() => void runBaselineRefresh()}
+            title="Igualar a linha de base ao planejamento atual somente nas atividades com 0% de avanço"
+          >
+            {refreshingBaselines ? (
+              <span className="button-spinner" />
+            ) : (
+              <Icon name="trend" />
+            )}
+            {refreshingBaselines
+              ? "Atualizando..."
+              : "Atualizar linha de base"}
           </button>
           <button
             className={`secondary-btn compact gantt-filter-button ${activeFilterCount ? "active" : ""}`}
@@ -1200,7 +1311,13 @@ export function Schedule({
           style={
             {
               "--gantt-table-width": `${taskPanelWidth}px`,
-              "--gantt-eap-width": `${eapColumnWidth}px`,
+              "--gantt-eap-width": `${taskColumnWidths.eap}px`,
+              "--gantt-activity-width": `${taskColumnWidths.activity}px`,
+              "--gantt-duration-width": `${taskColumnWidths.duration}px`,
+              "--gantt-progress-width": `${taskColumnWidths.progress}px`,
+              "--gantt-start-width": `${taskColumnWidths.start}px`,
+              "--gantt-end-width": `${taskColumnWidths.end}px`,
+              "--gantt-status-width": `${taskColumnWidths.status}px`,
             } as CSSProperties
           }
         >
@@ -1221,40 +1338,32 @@ export function Schedule({
                   />
                 )}
                 EAP
-                <button
-                  type="button"
-                  className="gantt-eap-resizer"
-                  role="separator"
-                  aria-label="Ajustar largura da coluna EAP"
-                  aria-orientation="vertical"
-                  aria-valuemin={90}
-                  aria-valuemax={240}
-                  aria-valuenow={eapColumnWidth}
-                  title="Arraste para ajustar a largura da coluna EAP"
-                  onPointerDown={beginEapColumnResize}
-                  onPointerMove={moveEapColumnResize}
-                  onPointerUp={endEapColumnResize}
-                  onPointerCancel={endEapColumnResize}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key !== "ArrowLeft" &&
-                      event.key !== "ArrowRight"
-                    )
-                      return;
-                    event.preventDefault();
-                    resizeEapColumn(
-                      eapColumnWidth +
-                        (event.key === "ArrowRight" ? 12 : -12),
-                    );
-                  }}
-                />
+                {taskColumnResizeHandle("eap", "EAP")}
               </span>
-              <span>ATIVIDADE</span>
-              <span>DURAÇÃO</span>
-              <span>PROGRESSO</span>
-              <span>INÍCIO</span>
-              <span>TÉRMINO</span>
-              <span>STATUS</span>
+              <span className="task-column-head">
+                ATIVIDADE
+                {taskColumnResizeHandle("activity", "Atividade")}
+              </span>
+              <span className="task-column-head">
+                DURAÇÃO
+                {taskColumnResizeHandle("duration", "Duração")}
+              </span>
+              <span className="task-column-head">
+                PROGRESSO
+                {taskColumnResizeHandle("progress", "Progresso")}
+              </span>
+              <span className="task-column-head">
+                INÍCIO
+                {taskColumnResizeHandle("start", "Início")}
+              </span>
+              <span className="task-column-head">
+                TÉRMINO
+                {taskColumnResizeHandle("end", "Término")}
+              </span>
+              <span className="task-column-head">
+                STATUS
+                {taskColumnResizeHandle("status", "Status")}
+              </span>
             </div>
             {visible.map((task) => {
               const childCount = orderedTasks.filter(
@@ -1910,6 +2019,19 @@ export function Schedule({
                 <Icon name="refresh" />
               )}
               {refreshingSchedule ? "Recalculando..." : "Atualizar gráfico"}
+            </button>
+            <button
+              disabled={refreshingBaselines}
+              onClick={() => void runBaselineRefresh()}
+            >
+              {refreshingBaselines ? (
+                <span className="button-spinner" />
+              ) : (
+                <Icon name="trend" />
+              )}
+              {refreshingBaselines
+                ? "Atualizando..."
+                : "Atualizar linha de base"}
             </button>
             <button
               onClick={() => {

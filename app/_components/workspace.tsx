@@ -617,6 +617,40 @@ export function Workspace() {
     );
   }
 
+  async function refreshTaskBaselines() {
+    if (!workspace) return;
+    const executableIds = new Set(
+      workspace.tasks
+        .filter(
+          (task) =>
+            task.progress <= 0 &&
+            !workspace.tasks.some((child) => child.parentId === task.id),
+        )
+        .map((task) => task.id),
+    );
+    if (!executableIds.size) {
+      setToast("Nenhuma atividade não iniciada precisa atualizar a linha de base.");
+      return;
+    }
+    const tasks = normalizeTaskHierarchy(
+      workspace.tasks.map((task) =>
+        executableIds.has(task.id)
+          ? {
+              ...task,
+              baselineStart: task.plannedStart,
+              baselineEnd: task.plannedEnd,
+            }
+          : task,
+      ),
+    );
+    if (remoteMode)
+      await updateRemoteTaskDates(workspace.project.id, tasks);
+    updateCurrent((current) => ({ ...current, tasks }));
+    setToast(
+      `Linha de base atualizada em ${executableIds.size} ${executableIds.size === 1 ? "atividade não iniciada" : "atividades não iniciadas"}.`,
+    );
+  }
+
   async function deleteTask(taskId: string) {
     if (!workspace) return;
     if (workspace.tasks.some((task) => task.parentId === taskId))
@@ -1805,6 +1839,7 @@ export function Workspace() {
               updateTaskProgress={updateTaskProgress}
               updateProjectWorkDays={updateProjectWorkDays}
               refreshSchedule={refreshSchedule}
+              refreshTaskBaselines={refreshTaskBaselines}
               setToast={setToast}
             />
           )}
