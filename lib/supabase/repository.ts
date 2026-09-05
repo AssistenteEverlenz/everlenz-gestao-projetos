@@ -1050,6 +1050,8 @@ export async function updateRemoteTaskDates(projectId: string, tasks: Task[]) {
           planned_start: task.plannedStart,
           planned_end: task.plannedEnd,
           duration_days: task.durationDays ?? null,
+          baseline_start: task.baselineStart ?? null,
+          baseline_end: task.baselineEnd ?? null,
         })
         .eq("id", task.id)
         .eq("project_id", projectId),
