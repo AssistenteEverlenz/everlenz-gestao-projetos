@@ -1384,22 +1384,34 @@ html[data-theme="dark"] .timeline-row.is-parent { background:color-mix(in srgb,v
 .settings-grid>.settings-card>.branding-editor,
 .settings-grid>.settings-card>.branding-help,
 .settings-grid>.settings-card>.access-message,
+.settings-grid>.settings-card>.settings-work-calendar,
 .settings-grid>.settings-card>button { grid-column:3; }
 .settings-grid>.settings-card>button { justify-self:start; }
 .settings-grid .theme-options { grid-template-columns:1fr 1fr; align-self:center; }
 .settings-grid .theme-options button { min-height:58px; padding:7px 10px; }
 .settings-grid .theme-preview { height:42px; }
-.settings-grid .branding-editor { grid-template-columns:62px minmax(160px,1fr) auto; align-self:center; }
+.settings-grid .branding-editor { grid-template-columns:62px minmax(150px,1fr) auto auto; align-self:center; }
 .settings-grid .branding-preview { width:62px; height:62px; }
+.settings-grid .branding-preview>b { color:#17211e; font:850 17px var(--font-display); letter-spacing:.04em; }
 .settings-grid .branding-help { margin-left:72px; }
+.branding-color { display:grid!important; grid-template-columns:30px auto; gap:7px!important; align-items:center; min-height:40px; padding:4px 9px; border:1px solid var(--line); border-radius:12px; background:var(--surface-soft); color:var(--muted); font-size:11px; font-weight:800; cursor:pointer; }
+.branding-color input[type="color"] { width:30px; height:30px; padding:2px; border-radius:8px; cursor:pointer; }
+.branding-color>span { text-transform:none!important; letter-spacing:0!important; }
+.settings-work-calendar { display:grid; gap:9px; }
+.settings-work-calendar>.weekday-options { grid-template-columns:repeat(7,minmax(58px,1fr)); }
+.settings-work-calendar>small { color:var(--muted); font-size:11px; line-height:1.45; }
 .settings-grid .setting-toggle { min-height:43px; padding:7px 10px; border:1px solid var(--line); border-radius:12px; background:var(--surface-soft); }
 .settings-grid .setting-toggle strong { font-size:12px; }
 .settings-grid .setting-toggle small { font-size:11px; }
 .settings-actions { position:sticky; z-index:5; bottom:12px; width:max-content; margin-left:auto; padding:6px; border:1px solid var(--line); border-radius:16px; background:color-mix(in srgb,var(--surface-solid) 94%,transparent); box-shadow:0 12px 35px rgba(16,28,24,.14); backdrop-filter:blur(12px); }
 .hero-project-identity { display:flex; align-items:center; gap:13px; min-width:0; }
 .hero-project-identity>div { min-width:0; }
+.hero-project-marks { position:relative; flex:0 0 72px; width:72px; height:56px; }
 .hero-project-logo { flex:0 0 auto; width:52px; height:52px; display:grid; place-items:center; overflow:hidden; border:1px solid var(--line-strong); border-radius:15px; background:var(--surface-solid); }
+.hero-project-marks>.hero-project-logo { position:absolute; left:0; top:0; box-shadow:0 7px 18px rgba(24,87,133,.16); }
+.hero-project-marks>.hero-project-logo.client { left:29px; top:17px; width:39px; height:39px; border-radius:12px; }
 .hero-project-logo img { width:84%; height:84%; object-fit:contain; }
+.hero-project-logo b { color:#17211e; font:850 13px var(--font-display); }
 
 @media screen and (max-width:1100px) {
   .settings-layout { grid-template-columns:1fr; }
@@ -1425,12 +1437,18 @@ html[data-theme="dark"] .timeline-row.is-parent { background:color-mix(in srgb,v
   .settings-grid>.settings-card>.branding-editor,
   .settings-grid>.settings-card>.branding-help,
   .settings-grid>.settings-card>.access-message,
+  .settings-grid>.settings-card>.settings-work-calendar,
   .settings-grid>.settings-card>button { grid-column:1/-1; }
-  .settings-grid .branding-editor { grid-template-columns:58px minmax(0,1fr); }
+  .settings-grid .branding-editor { grid-template-columns:58px minmax(0,1fr) auto; }
   .settings-grid .branding-preview { width:58px; height:58px; }
   .settings-grid .branding-editor .primary-btn { grid-column:1/-1; }
+  .settings-grid .branding-color { grid-column:3; grid-row:1; }
   .settings-grid .branding-help { margin-left:0; }
+  .settings-work-calendar { overflow-x:auto; }
+  .settings-work-calendar>.weekday-options { min-width:570px; }
   .settings-grid .theme-options button { grid-template-columns:1fr 14px auto; }
   .settings-actions { position:static; width:100%; padding:0; border:0; background:transparent; box-shadow:none; backdrop-filter:none; }
+  .hero-project-marks { flex-basis:62px; width:62px; height:50px; }
   .hero-project-logo { width:44px; height:44px; border-radius:12px; }
+  .hero-project-marks>.hero-project-logo.client { left:25px; top:14px; width:35px; height:35px; }
 }

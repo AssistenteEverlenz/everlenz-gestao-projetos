@@ -968,7 +968,7 @@ export function Schedule({
                       </small>
                     </span>
                     <span>
-                      {task.milestone
+                      {task.milestone && childCount === 0
                         ? "Marco"
                         : `${workingDuration(task.plannedStart, task.plannedEnd, project.workDays)}d`}
                     </span>
@@ -1175,16 +1175,7 @@ export function Schedule({
                           style={barStyle(task, true)}
                         />
                       )}
-                      {task.milestone ? (
-                        <span
-                          className="milestone"
-                          style={{
-                            ...barStyle(task),
-                            width: undefined,
-                            background: palette.period,
-                          }}
-                        />
-                      ) : childCount > 0 ? (
+                      {childCount > 0 ? (
                         <span
                           className="gantt-parent-bar"
                           style={{
@@ -1195,6 +1186,15 @@ export function Schedule({
                         >
                           <b>{task.progress}%</b>
                         </span>
+                      ) : task.milestone ? (
+                        <span
+                          className="milestone"
+                          style={{
+                            ...barStyle(task),
+                            width: undefined,
+                            background: palette.period,
+                          }}
+                        />
                       ) : (
                         <span
                           className="gantt-bar"
@@ -1830,7 +1830,9 @@ function TaskForm({
   const [lagDays, setLagDays] = useState(initial?.lagDays ?? 0);
   const [weight, setWeight] = useState(initial?.weight ?? 1);
   const [critical, setCritical] = useState(Boolean(initial?.critical));
-  const [milestone, setMilestone] = useState(Boolean(initial?.milestone));
+  const [milestone, setMilestone] = useState(
+    Boolean(initial?.milestone) && !derivesPeriod,
+  );
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1882,6 +1884,7 @@ function TaskForm({
     setSaving(true);
     setError("");
     try {
+      const effectiveMilestone = milestone && !derivesPeriod;
       const safePlannedEnd =
         plannedEnd < plannedStart ? plannedStart : plannedEnd;
       const safeBaselineEnd =
@@ -1892,9 +1895,9 @@ function TaskForm({
         name,
         phase: phase || "Sem etapa",
         plannedStart,
-        plannedEnd: milestone ? plannedStart : safePlannedEnd,
+        plannedEnd: effectiveMilestone ? plannedStart : safePlannedEnd,
         baselineStart,
-        baselineEnd: milestone ? baselineStart : safeBaselineEnd,
+        baselineEnd: effectiveMilestone ? baselineStart : safeBaselineEnd,
         progress: initial?.progress ?? 0,
         weight,
         responsible,
@@ -1906,7 +1909,7 @@ function TaskForm({
         lagDays: dependencyId ? lagDays : undefined,
         color: initial?.color ?? taskStatusPalette.waiting.period,
         critical,
-        milestone,
+        milestone: effectiveMilestone,
         notes,
       });
     } catch (cause) {
@@ -2193,6 +2196,7 @@ function TaskForm({
           <input
             type="checkbox"
             checked={milestone}
+            disabled={derivesPeriod}
             onChange={(event) => setMilestone(event.target.checked)}
           />
           <span title="Evento de duração zero que representa uma entrega, aprovação ou decisão importante">

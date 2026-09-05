@@ -176,11 +176,14 @@ export function Projects({
               key={workspace.project.id}
             >
               <header>
-                <span className="project-card-monogram">
+                <span
+                  className="project-card-monogram"
+                  style={{ backgroundColor: workspace.project.logoBackground }}
+                >
                   {workspace.project.logoUrl ? (
                     <img
                       src={workspace.project.logoUrl}
-                      alt={`Logo ${workspace.project.client}`}
+                      alt={`Logo ${workspace.project.name}`}
                     />
                   ) : (
                     workspace.project.name

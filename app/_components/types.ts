@@ -23,9 +23,15 @@ export type Project = {
   contractNumber?: string;
   workDays?: number[];
   archivedAt?: string;
+  /** Logo da obra/projeto. */
   logoUrl?: string;
+  logoBackground?: string;
+  /** Identidade do cliente contratante, independente da obra. */
+  clientLogoUrl?: string;
+  clientLogoBackground?: string;
   organizationName?: string;
   organizationLogoUrl?: string;
+  organizationLogoBackground?: string;
 };
 
 export type TaskResponsibleKind = "user" | "team" | "worker";

@@ -8,6 +8,7 @@ import {
 } from "@/lib/supabase/client";
 import type { Project } from "../types";
 import { Icon } from "../icons";
+import { projectWorkDays } from "../work-calendar";
 
 type Props = {
   dark: boolean;
@@ -16,9 +17,11 @@ type Props = {
   project?: Project;
   canManage: boolean;
   saveBrandLogo: (
-    scope: "organization" | "project",
+    scope: "organization" | "client" | "project",
     file: File | null,
+    background: string,
   ) => Promise<void>;
+  updateProjectWorkDays: (workDays: number[]) => Promise<void>;
 };
 
 export function Settings({
@@ -28,11 +31,15 @@ export function Settings({
   project,
   canManage,
   saveBrandLogo,
+  updateProjectWorkDays,
 }: Props) {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
+  const [workDays, setWorkDays] = useState(() =>
+    projectWorkDays(project?.workDays),
+  );
 
   async function changePassword(event: React.FormEvent) {
     event.preventDefault();
@@ -55,9 +62,12 @@ export function Settings({
 
   async function savePreferences() {
     setSavingPreferences(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 350));
-    setSavingPreferences(false);
-    setToast("Preferências salvas.");
+    try {
+      if (project) await updateProjectWorkDays(workDays);
+      setToast("Preferências salvas.");
+    } finally {
+      setSavingPreferences(false);
+    }
   }
 
   return (
@@ -121,6 +131,7 @@ export function Settings({
           title="Marca da empresa"
           description="Aparece no acesso, carregamento e identidade principal da plataforma."
           currentUrl={project?.organizationLogoUrl}
+          currentBackground={project?.organizationLogoBackground}
           fallbackUrl="/everlenz-mark.png"
           disabled={!canManage}
           onSave={saveBrandLogo}
@@ -180,28 +191,61 @@ export function Settings({
             <h3>Calendário da obra</h3>
             <p>Configuração usada no cálculo de durações e dependências.</p>
           </div>
-          <label>
-            <span>Jornada padrão</span>
-            <select defaultValue="seg-sab">
-              <option value="seg-sab">Segunda a sábado</option>
-              <option value="seg-sex">Segunda a sexta</option>
-            </select>
-          </label>
-          <label>
-            <span>Horas por dia</span>
-            <input type="number" defaultValue="8" />
-          </label>
+          <div className="settings-work-calendar">
+            <div className="weekday-options">
+              {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(
+                (label, day) => (
+                  <label
+                    key={label}
+                    className={workDays.includes(day) ? "active" : ""}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={workDays.includes(day)}
+                      onChange={() =>
+                        setWorkDays((current) =>
+                          current.includes(day)
+                            ? current.filter((item) => item !== day)
+                            : [...current, day].sort(),
+                        )
+                      }
+                    />
+                    <strong>{label}</strong>
+                    <small>{workDays.includes(day) ? "Trabalho" : "Folga"}</small>
+                  </label>
+                ),
+              )}
+            </div>
+            <small>
+              Mesma regra utilizada para durações, dependências e reagendamento no Gantt.
+            </small>
+          </div>
         </div>
         {project && (
-          <LogoSettingsCard
-            scope="project"
-            title="Logo do cliente neste projeto"
-            description={`Usada somente em ${project.name}, na identificação, nos cartões e seletores desta obra.`}
-            currentUrl={project.logoUrl}
-            fallbackUrl="/emdia.svg"
-            disabled={!canManage}
-            onSave={saveBrandLogo}
-          />
+          <>
+            <LogoSettingsCard
+              key={`client-${project.id}`}
+              scope="client"
+              title="Logo do cliente"
+              description={`Identidade de ${project.client}, vinculada somente a este projeto.`}
+              currentUrl={project.clientLogoUrl}
+              currentBackground={project.clientLogoBackground}
+              fallbackText={brandInitials(project.client)}
+              disabled={!canManage}
+              onSave={saveBrandLogo}
+            />
+            <LogoSettingsCard
+              key={`project-${project.id}`}
+              scope="project"
+              title="Logo da obra"
+              description={`Identidade de ${project.name}; sem imagem, serão usadas as iniciais da obra.`}
+              currentUrl={project.logoUrl}
+              currentBackground={project.logoBackground}
+              fallbackText={brandInitials(project.name)}
+              disabled={!canManage}
+              onSave={saveBrandLogo}
+            />
+          </>
         )}
         {isSupabaseConfigured() && (
           <form className="settings-card" id="settings-account" onSubmit={changePassword}>
@@ -262,7 +306,7 @@ export function Settings({
       <div className="settings-actions">
         <button
           className="primary-btn"
-          disabled={savingPreferences}
+          disabled={savingPreferences || !workDays.length}
           onClick={() => void savePreferences()}
         >
           {savingPreferences ? (
@@ -287,26 +331,34 @@ function LogoSettingsCard({
   title,
   description,
   currentUrl,
+  currentBackground = "#FFFFFF",
   fallbackUrl,
+  fallbackText,
   disabled,
   onSave,
 }: {
-  scope: "organization" | "project";
+  scope: "organization" | "client" | "project";
   id?: string;
   title: string;
   description: string;
   currentUrl?: string;
-  fallbackUrl: string;
+  currentBackground?: string;
+  fallbackUrl?: string;
+  fallbackText?: string;
   disabled: boolean;
   onSave: (
-    scope: "organization" | "project",
+    scope: "organization" | "client" | "project",
     file: File | null,
+    background: string,
   ) => Promise<void>;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [background, setBackground] = useState(currentBackground);
+  const backgroundChanged =
+    background.toUpperCase() !== currentBackground.toUpperCase();
 
   function selectFile(selected?: File) {
     setError("");
@@ -322,11 +374,11 @@ function LogoSettingsCard({
   }
 
   async function save() {
-    if (!file) return;
+    if (!file && !backgroundChanged) return;
     setSaving(true);
     setError("");
     try {
-      await onSave(scope, file);
+      await onSave(scope, file, background);
       setFile(null);
       setPreview(null);
     } catch (cause) {
@@ -351,11 +403,15 @@ function LogoSettingsCard({
         <p>{description}</p>
       </div>
       <div className="branding-editor">
-        <span className="branding-preview">
-          <img
-            src={preview || currentUrl || fallbackUrl}
-            alt={`Prévia — ${title}`}
-          />
+        <span className="branding-preview" style={{ backgroundColor: background }}>
+          {preview || currentUrl || fallbackUrl ? (
+            <img
+              src={preview || currentUrl || fallbackUrl}
+              alt={`Prévia — ${title}`}
+            />
+          ) : (
+            <b>{fallbackText}</b>
+          )}
         </span>
         <label className={`secondary-btn ${disabled ? "disabled" : ""}`}>
           <Icon name="camera" /> Escolher PNG
@@ -367,9 +423,19 @@ function LogoSettingsCard({
             onChange={(event) => selectFile(event.target.files?.[0])}
           />
         </label>
+        <label className="branding-color">
+          <input
+            type="color"
+            value={background}
+            disabled={disabled || saving}
+            onChange={(event) => setBackground(event.target.value)}
+            aria-label={`Cor de fundo — ${title}`}
+          />
+          <span>Fundo</span>
+        </label>
         <button
           className="primary-btn"
-          disabled={disabled || saving || !file}
+          disabled={disabled || saving || (!file && !backgroundChanged)}
           onClick={() => void save()}
         >
           {saving ? (
@@ -396,4 +462,14 @@ function LogoSettingsCard({
       )}
     </section>
   );
+}
+
+function brandInitials(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }

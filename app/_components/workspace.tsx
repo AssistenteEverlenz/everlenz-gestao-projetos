@@ -1298,8 +1298,9 @@ export function Workspace() {
   }
 
   async function saveBrandLogo(
-    scope: "organization" | "project",
+    scope: "organization" | "client" | "project",
     file: File | null,
+    background: string,
   ) {
     if (!workspace) return;
     let logoUrl: string | undefined;
@@ -1308,8 +1309,10 @@ export function Workspace() {
         throw new Error("Organização não identificada.");
       logoUrl = await saveRemoteBrandLogo(
         workspace.organizationId,
-        scope === "project" ? workspace.project.id : undefined,
+        scope === "organization" ? undefined : workspace.project.id,
+        scope,
         file,
+        background,
       );
     } else if (file) {
       logoUrl = await new Promise<string>((resolve, reject) => {
@@ -1325,17 +1328,38 @@ export function Workspace() {
         if (scope === "organization")
           return {
             ...item,
-            project: { ...item.project, organizationLogoUrl: logoUrl },
+            project: {
+              ...item.project,
+              organizationLogoUrl: logoUrl ?? item.project.organizationLogoUrl,
+              organizationLogoBackground: background,
+            },
           };
-        return item.project.id === workspace.project.id
-          ? { ...item, project: { ...item.project, logoUrl } }
-          : item;
+        if (item.project.id !== workspace.project.id) return item;
+        return scope === "client"
+          ? {
+              ...item,
+              project: {
+                ...item.project,
+                clientLogoUrl: logoUrl ?? item.project.clientLogoUrl,
+                clientLogoBackground: background,
+              },
+            }
+          : {
+              ...item,
+              project: {
+                ...item.project,
+                logoUrl: logoUrl ?? item.project.logoUrl,
+                logoBackground: background,
+              },
+            };
       }),
     );
     setToast(
       scope === "organization"
         ? "Marca da empresa atualizada."
-        : "Logo do projeto atualizada.",
+        : scope === "client"
+          ? "Identidade do cliente atualizada."
+          : "Identidade da obra atualizada.",
     );
   }
 
@@ -1426,6 +1450,9 @@ export function Workspace() {
         >
           <BrandSymbols
             organizationLogoUrl={workspace?.project.organizationLogoUrl}
+            organizationLogoBackground={
+              workspace?.project.organizationLogoBackground
+            }
           />
           <span>
             <strong>em dia</strong>
@@ -1443,11 +1470,12 @@ export function Workspace() {
         >
           <span
             className={`project-monogram ${workspace?.project.logoUrl ? "has-logo" : ""}`}
+            style={{ backgroundColor: workspace?.project.logoBackground }}
           >
             {workspace?.project.logoUrl ? (
               <img
                 src={workspace.project.logoUrl}
-                alt={`Logo ${workspace.project.client}`}
+                alt={`Logo ${workspace.project.name}`}
               />
             ) : workspace ? (
               workspace.project.name
@@ -1557,6 +1585,9 @@ export function Workspace() {
           <div className="mobile-brand">
             <BrandSymbols
               organizationLogoUrl={workspace?.project.organizationLogoUrl}
+              organizationLogoBackground={
+                workspace?.project.organizationLogoBackground
+              }
             />
             <strong>
               em dia <span>BY EVERLENZ</span>
@@ -1737,6 +1768,7 @@ export function Workspace() {
           )}
           {view === "settings" && (
             <Settings
+              key={workspace?.project.id ?? "global-settings"}
               dark={dark}
               setDark={chooseTheme}
               setToast={setToast}
@@ -1746,6 +1778,7 @@ export function Workspace() {
                 authenticatedMember.role === "Gestor"
               }
               saveBrandLogo={saveBrandLogo}
+              updateProjectWorkDays={updateProjectWorkDays}
             />
           )}
         </div>

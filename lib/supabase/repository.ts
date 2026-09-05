@@ -87,7 +87,7 @@ export async function loadWorkspaces(userEmail: string) {
 
   const { data: organization, error: organizationError } = await supabase
     .from("organizations")
-    .select("name,logo_url")
+    .select("name,logo_url,logo_background")
     .eq("id", profile.organization_id)
     .single();
   if (organizationError) throw organizationError;
@@ -95,7 +95,7 @@ export async function loadWorkspaces(userEmail: string) {
   let { data: projectRows, error: projectError } = await supabase
     .from("projects")
     .select(
-      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at,logo_path",
+      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at,logo_path,logo_background,client_logo_path,client_logo_background",
     )
     .order("created_at");
   if (projectError?.message.includes("logo_path")) {
@@ -105,7 +105,14 @@ export async function loadWorkspaces(userEmail: string) {
         "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at",
       )
       .order("created_at");
-    projectRows = fallback.data?.map((row) => ({ ...row, logo_path: null })) ?? null;
+    projectRows =
+      fallback.data?.map((row) => ({
+        ...row,
+        logo_path: null,
+        logo_background: "#FFFFFF",
+        client_logo_path: null,
+        client_logo_background: "#FFFFFF",
+      })) ?? null;
     projectError = fallback.error;
   }
   if (projectError) throw projectError;
@@ -352,12 +359,21 @@ export async function loadWorkspaces(userEmail: string) {
             ? supabase.storage.from("brand-assets").getPublicUrl(row.logo_path)
                 .data.publicUrl
             : undefined,
+          logoBackground: row.logo_background ?? "#FFFFFF",
+          clientLogoUrl: row.client_logo_path
+            ? supabase.storage
+                .from("brand-assets")
+                .getPublicUrl(row.client_logo_path).data.publicUrl
+            : undefined,
+          clientLogoBackground: row.client_logo_background ?? "#FFFFFF",
           organizationName: organization.name,
           organizationLogoUrl: organization.logo_url
             ? supabase.storage
                 .from("brand-assets")
                 .getPublicUrl(organization.logo_url).data.publicUrl
             : undefined,
+          organizationLogoBackground:
+            organization.logo_background ?? "#FFFFFF",
         },
         tasks,
         entries,
@@ -994,16 +1010,28 @@ export async function setRemoteProjectArchived(
 export async function saveRemoteBrandLogo(
   organizationId: string,
   projectId: string | undefined,
+  scope: "organization" | "client" | "project",
   file: File | null,
+  background: string,
 ) {
   const uploaded = file
-    ? await uploadBrandAsset(organizationId, projectId ?? "organization", file)
+    ? await uploadBrandAsset(
+        organizationId,
+        projectId ? `${projectId}/${scope}` : "organization",
+        file,
+      )
     : null;
-  const rpc = projectId ? "set_project_logo" : "set_organization_logo";
-  const args = projectId
-    ? { p_project_id: projectId, p_logo_path: uploaded?.path ?? null }
-    : { p_logo_path: uploaded?.path ?? null };
-  const { error } = await getSupabaseBrowserClient().rpc(rpc, args);
+  const { error } = projectId
+    ? await getSupabaseBrowserClient().rpc("set_project_brand", {
+        p_project_id: projectId,
+        p_scope: scope,
+        p_logo_path: uploaded?.path ?? null,
+        p_logo_background: background,
+      })
+    : await getSupabaseBrowserClient().rpc("set_organization_brand", {
+        p_logo_path: uploaded?.path ?? null,
+        p_logo_background: background,
+      });
   if (error) throw error;
   return uploaded?.url;
 }

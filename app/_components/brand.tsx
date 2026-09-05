@@ -2,9 +2,11 @@
 
 export function BrandSymbols({
   organizationLogoUrl,
+  organizationLogoBackground = "#FFFFFF",
   className = "",
 }: {
   organizationLogoUrl?: string;
+  organizationLogoBackground?: string;
   className?: string;
 }) {
   return (
@@ -12,7 +14,10 @@ export function BrandSymbols({
       className={`brand-symbols ${className}`.trim()}
       aria-label="Everlenz em parceria com Natreb"
     >
-      <span className="brand-symbol organization-brand">
+      <span
+        className="brand-symbol organization-brand"
+        style={{ backgroundColor: organizationLogoBackground }}
+      >
         <img src={organizationLogoUrl || "/everlenz-mark.png"} alt="Everlenz" />
       </span>
       <span className="brand-symbol partner-brand">

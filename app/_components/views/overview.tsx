@@ -34,11 +34,30 @@ export function Overview({ project, tasks, entries, navigate, metrics }: Props) 
       <div className="hero-main">
         <div className="hero-title-row">
           <div className="hero-project-identity">
-            {project.logoUrl && (
-              <span className="hero-project-logo">
-                <img src={project.logoUrl} alt={`Logo ${project.client}`} />
+            <span className="hero-project-marks">
+              <span
+                className="hero-project-logo"
+                style={{ backgroundColor: project.logoBackground }}
+                title="Identidade da obra"
+              >
+                {project.logoUrl ? (
+                  <img src={project.logoUrl} alt={`Logo ${project.name}`} />
+                ) : (
+                  <b>{brandInitials(project.name)}</b>
+                )}
               </span>
-            )}
+              <span
+                className="hero-project-logo client"
+                style={{ backgroundColor: project.clientLogoBackground }}
+                title="Identidade do cliente"
+              >
+                {project.clientLogoUrl ? (
+                  <img src={project.clientLogoUrl} alt={`Logo ${project.client}`} />
+                ) : (
+                  <b>{brandInitials(project.client)}</b>
+                )}
+              </span>
+            </span>
             <div>
               <span className="overline">OBRA EM ANDAMENTO</span>
               <h2>{project.name}</h2>
@@ -87,6 +106,16 @@ export function Overview({ project, tasks, entries, navigate, metrics }: Props) 
       <button className="primary-btn" onClick={() => navigate("reports")}>Revisar e gerar relatório <Icon name="arrow" /></button>
     </section>
   </div>;
+}
+
+function brandInitials(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
 function buildSCurve(project: Project, tasks: Task[], entries: JournalEntry[]) {
