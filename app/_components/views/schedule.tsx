@@ -32,6 +32,7 @@ import {
   shiftWorkingDays,
   workingDuration,
   workingEnd,
+  taskWorkingDuration,
 } from "../work-calendar";
 
 type Props = {
@@ -43,8 +44,10 @@ type Props = {
   navigate: (view: ViewId) => void;
   metrics: { overall: number; active: number };
   addTask: (task: Task) => Promise<void>;
+  addTasks: (tasks: Task[]) => Promise<void>;
   editTask: (task: Task) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
+  deleteTasks: (taskIds: string[]) => Promise<void>;
   editEntry: (entry: JournalEntry) => Promise<void>;
   deleteEntry: (entry: JournalEntry) => Promise<void>;
   reorderTasks: (tasks: Task[]) => Promise<void>;
@@ -60,8 +63,8 @@ const daysBetween = (start: string, end: string) =>
     0,
     Math.round((toDate(end).getTime() - toDate(start).getTime()) / dayMs),
   );
-const duration = (task: Task) =>
-  Math.max(1, daysBetween(task.plannedStart, task.plannedEnd) + 1);
+const formatDuration = (value: number) =>
+  `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)}d`;
 const formatDate = (value: string) =>
   toDate(value)
     .toLocaleDateString("pt-BR", {
@@ -158,8 +161,10 @@ export function Schedule({
   projectTeams = [],
   metrics,
   addTask,
+  addTasks,
   editTask,
   deleteTask,
+  deleteTasks,
   editEntry,
   deleteEntry,
   reorderTasks,
@@ -203,6 +208,10 @@ export function Schedule({
   const [showBaseline, setShowBaseline] = useState(true);
   const [filters, setFilters] = useState<GanttFilters>(emptyGanttFilters);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -474,7 +483,16 @@ export function Schedule({
     if (!startValue || !endValue) return { display: "none" };
     return {
       left: `${Math.min(99, (daysBetween(timelineStart, startValue) / projectDays) * 100)}%`,
-      width: `${Math.max(0.8, ((daysBetween(startValue, endValue) + 1) / projectDays) * 100)}%`,
+      width: `${Math.max(
+        0.8,
+        (((!baseline &&
+          !tasks.some((child) => child.parentId === task.id) &&
+          task.durationDays != null
+            ? task.durationDays
+            : daysBetween(startValue, endValue) + 1) /
+          projectDays) *
+          100),
+      )}%`,
     };
   }
   function taskDepth(task: Task) {
@@ -485,6 +503,28 @@ export function Schedule({
       parentId = orderedTasks.find((item) => item.id === parentId)?.parentId;
     }
     return depth;
+  }
+  function hierarchyClass(task: Task, childCount: number) {
+    return childCount
+      ? `is-parent hierarchy-depth-${Math.min(4, taskDepth(task))}`
+      : "";
+  }
+  function toggleTaskSelection(taskId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+  function selectAllVisible() {
+    const visibleIds = visible.map((task) => task.id);
+    const allSelected = visibleIds.every((id) => selectedIds.has(id));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      visibleIds.forEach((id) => (allSelected ? next.delete(id) : next.add(id)));
+      return next;
+    });
   }
   function clearFilters() {
     setFilters({ ...emptyGanttFilters });
@@ -649,7 +689,7 @@ export function Schedule({
     setDropIntent(null);
   }
   function beginTaskRowGesture(
-    event: ReactPointerEvent<HTMLButtonElement>,
+    event: ReactPointerEvent<HTMLDivElement>,
     taskId: string,
   ) {
     if (
@@ -674,7 +714,7 @@ export function Schedule({
     };
     taskRowGesture.current = gesture;
   }
-  function moveTaskRowGesture(event: ReactPointerEvent<HTMLButtonElement>) {
+  function moveTaskRowGesture(event: ReactPointerEvent<HTMLDivElement>) {
     const gesture = taskRowGesture.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     if (
@@ -693,7 +733,7 @@ export function Schedule({
     event.preventDefault();
     updatePointerDrop(event, gesture.taskId);
   }
-  function endTaskRowGesture(event: ReactPointerEvent<HTMLButtonElement>) {
+  function endTaskRowGesture(event: ReactPointerEvent<HTMLDivElement>) {
     const gesture = taskRowGesture.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     window.clearTimeout(gesture.timer);
@@ -934,6 +974,40 @@ export function Schedule({
             </button>
           )}
         </div>
+        {selectedIds.size > 0 && (
+          <div className="gantt-selection-bar">
+            <span>
+              <b>{selectedIds.size}</b>{" "}
+              {selectedIds.size === 1
+                ? "item selecionado"
+                : "itens selecionados"}
+            </span>
+            <button
+              className="secondary-btn compact"
+              disabled={selectedIds.size !== 1}
+              onClick={() => setCopyOpen(true)}
+              title={
+                selectedIds.size === 1
+                  ? "Copiar item e seus subitens"
+                  : "Selecione apenas um item para copiar"
+              }
+            >
+              <Icon name="copy" /> Copiar estrutura
+            </button>
+            <button
+              className="danger-btn compact"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Icon name="trash" /> Excluir seleção
+            </button>
+            <button
+              className="text-btn"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Limpar seleção
+            </button>
+          </div>
+        )}
       </section>
 
       <section
@@ -1026,7 +1100,18 @@ export function Schedule({
         >
           <div className="gantt-task-panel">
             <div className="task-table-head">
-              <span>EAP</span>
+              <span className="task-eap-head">
+                <input
+                  type="checkbox"
+                  checked={
+                    visible.length > 0 &&
+                    visible.every((task) => selectedIds.has(task.id))
+                  }
+                  onChange={selectAllVisible}
+                  aria-label="Selecionar todas as atividades visíveis"
+                />
+                EAP
+              </span>
               <span>ATIVIDADE</span>
               <span>DURAÇÃO</span>
               <span>PROGRESSO</span>
@@ -1043,11 +1128,13 @@ export function Schedule({
               return (
                 <div
                   data-task-id={task.id}
-                  className={`gantt-task-line status-${status} ${childCount ? "is-parent" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${task.critical ? "critical" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
+                  className={`gantt-task-line status-${status} ${hierarchyClass(task, childCount)} ${selectedIds.has(task.id) ? "is-selected" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${task.critical ? "critical" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
                   key={task.id}
                 >
-                  <button
+                  <div
                     className="task-row"
+                    role="button"
+                    tabIndex={0}
                     onPointerDown={(event) =>
                       beginTaskRowGesture(event, task.id)
                     }
@@ -1055,8 +1142,23 @@ export function Schedule({
                     onPointerUp={endTaskRowGesture}
                     onPointerCancel={endTaskRowGesture}
                     onClick={(event) => openTaskFromTable(event, task)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelected(task);
+                      }
+                    }}
                   >
                     <span className="task-eap-cell">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(task.id)}
+                        onChange={() => toggleTaskSelection(task.id)}
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        aria-label={`Selecionar ${task.name}`}
+                      />
                       <span
                         className="drag-grip"
                         role="button"
@@ -1115,7 +1217,15 @@ export function Schedule({
                     <span>
                       {task.milestone && childCount === 0
                         ? "Marco"
-                        : `${workingDuration(task.plannedStart, task.plannedEnd, project.workDays)}d`}
+                        : formatDuration(
+                            childCount
+                              ? workingDuration(
+                                  task.plannedStart,
+                                  task.plannedEnd,
+                                  project.workDays,
+                                )
+                              : taskWorkingDuration(task, project.workDays),
+                          )}
                     </span>
                     <span className="task-progress-cell">
                       <i>
@@ -1146,7 +1256,7 @@ export function Schedule({
                         }}
                       />
                     </span>
-                  </button>
+                  </div>
                 </div>
               );
             })}
@@ -1257,17 +1367,72 @@ export function Schedule({
                             (source) => source.id === candidate.dependencyId,
                           ),
                         ).length - 1;
-                    const laneOffset = Math.max(0, dependencyIndex % 8) * 4;
-                    const sourceExitX = Math.max(
-                      4,
-                      Math.min(
-                        996,
-                        sourceX +
-                          (sourceUsesFinish
-                            ? 10 + laneOffset
-                            : -10 - laneOffset),
+                    const barBounds = (candidate: Task) => {
+                      const start = dateX(candidate.plannedStart, false);
+                      const span =
+                        ((!tasks.some(
+                          (child) => child.parentId === candidate.id,
+                        ) && candidate.durationDays != null
+                          ? candidate.durationDays
+                          : daysBetween(
+                              candidate.plannedStart,
+                              candidate.plannedEnd,
+                            ) + 1) /
+                          projectDays) *
+                        1000;
+                      return {
+                        start: Math.max(3, start - 7),
+                        end: Math.min(997, start + span + 7),
+                      };
+                    };
+                    const betweenStart = Math.min(sourceIndex, targetIndex) + 1;
+                    const betweenEnd = Math.max(sourceIndex, targetIndex);
+                    const laneShift = ((dependencyIndex % 7) - 3) * 3;
+                    const candidates = [
+                      sourceX + (sourceUsesFinish ? 12 : -12),
+                      targetX + (targetUsesFinish ? 12 : -12),
+                      Math.min(sourceX, targetX) - 16,
+                      Math.max(sourceX, targetX) + 16,
+                      ...Array.from(
+                        { length: 49 },
+                        (_, index) => 20 + index * 20,
                       ),
-                    );
+                    ].map((value) => Math.max(4, Math.min(996, value + laneShift)));
+                    const laneX = candidates.reduce(
+                      (best, candidateX) => {
+                        const collisions = visible
+                          .slice(betweenStart, betweenEnd)
+                          .reduce((count, rowTask) => {
+                            const bounds = barBounds(rowTask);
+                            return (
+                              count +
+                              Number(
+                                candidateX >= bounds.start &&
+                                  candidateX <= bounds.end,
+                              )
+                            );
+                          }, 0);
+                        const wrongSourceSide = sourceUsesFinish
+                          ? candidateX < sourceX + 7
+                          : candidateX > sourceX - 7;
+                        const wrongTargetSide = targetUsesFinish
+                          ? candidateX < targetX + 7
+                          : candidateX > targetX - 7;
+                        const distance =
+                          Math.abs(candidateX - sourceX) +
+                          Math.abs(candidateX - targetX);
+                        const score =
+                          collisions * 10000 +
+                          Number(wrongSourceSide) * 900 +
+                          Number(wrongTargetSide) * 700 +
+                          distance +
+                          (dependencyIndex % 7) *
+                            Math.abs(candidateX - sourceX) *
+                            0.01;
+                        return score < best.score ? { x: candidateX, score } : best;
+                      },
+                      { x: sourceX, score: Number.POSITIVE_INFINITY },
+                    ).x;
                     const targetApproachX = Math.max(
                       3,
                       Math.min(997, targetX + (targetUsesFinish ? 7 : -7)),
@@ -1279,8 +1444,8 @@ export function Schedule({
                     const dependencyPath = roundedOrthogonalPath(
                       [
                         { x: sourceX, y: sourceY },
-                        { x: sourceExitX, y: sourceY },
-                        { x: sourceExitX, y: approachY },
+                        { x: laneX, y: sourceY },
+                        { x: laneX, y: approachY },
                         { x: targetApproachX, y: approachY },
                         { x: targetApproachX, y: targetY },
                         { x: targetX, y: targetY },
@@ -1305,7 +1470,7 @@ export function Schedule({
                   const palette = taskStatusPalette[status];
                   return (
                     <button
-                      className={`timeline-row status-${status} ${childCount ? "is-parent" : ""} ${task.critical ? "critical" : ""}`}
+                      className={`timeline-row status-${status} ${hierarchyClass(task, childCount)} ${task.critical ? "critical" : ""}`}
                       aria-label={`Período de ${task.name}. Arraste para navegar pelo cronograma.`}
                       key={task.id}
                     >
@@ -1354,7 +1519,7 @@ export function Schedule({
                               background: palette.progress,
                             }}
                           />
-                          {duration(task) > 2 && <b>{task.progress}%</b>}
+                          {taskWorkingDuration(task, project.workDays) > 2 && <b>{task.progress}%</b>}
                         </span>
                       )}
                     </button>
@@ -1407,7 +1572,7 @@ export function Schedule({
               4,
               Math.min(
                 100 - timelineLeft,
-                (duration(task) / projectDays) * 100,
+                (taskWorkingDuration(task, project.workDays) / projectDays) * 100,
               ),
             );
             return (
@@ -1603,6 +1768,77 @@ export function Schedule({
             setCalendarOpen(false);
           }}
         />
+      )}
+      {copyOpen && selectedIds.size === 1 && (
+        <DuplicateTaskModal
+          source={orderedTasks.find((task) => selectedIds.has(task.id))!}
+          tasks={orderedTasks}
+          onClose={() => setCopyOpen(false)}
+          onDuplicate={async (source, destinationParentId) => {
+            const sourceTreeIds = new Set([source.id, ...descendantIds(source.id)]);
+            const sourceTree = orderedTasks.filter((task) => sourceTreeIds.has(task.id));
+            const idMap = new Map(sourceTree.map((task) => [task.id, crypto.randomUUID()]));
+            const copies = sourceTree.map((task) => ({
+              ...task,
+              id: idMap.get(task.id)!,
+              code: `copy-${idMap.get(task.id)}`,
+              name: task.id === source.id ? `${task.name} (cópia)` : task.name,
+              parentId:
+                task.id === source.id
+                  ? destinationParentId || undefined
+                  : task.parentId
+                    ? idMap.get(task.parentId)
+                    : undefined,
+              dependencyId: task.dependencyId
+                ? (idMap.get(task.dependencyId) ?? task.dependencyId)
+                : undefined,
+              progress: 0,
+            }));
+            await addTasks(copies);
+            setSelectedIds(new Set());
+            setCopyOpen(false);
+          }}
+        />
+      )}
+      {bulkDeleteOpen && (
+        <Modal
+          title="Excluir itens selecionados"
+          subtitle="A seleção será validada antes de qualquer exclusão."
+          onClose={() => !bulkProcessing && setBulkDeleteOpen(false)}
+        >
+          <div className="confirm-delete-modal">
+            <span className="confirm-delete-icon"><Icon name="alert" /></span>
+            <h3>Excluir {selectedIds.size} {selectedIds.size === 1 ? "item" : "itens"}?</h3>
+            <p>
+              Todos os descendentes dos itens-pai também serão removidos. Se qualquer
+              atividade tiver registros no Diário de Obra, a operação inteira será bloqueada.
+            </p>
+            <div className="modal-actions">
+              <button className="secondary-btn" disabled={bulkProcessing} onClick={() => setBulkDeleteOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                className="danger-btn"
+                disabled={bulkProcessing}
+                onClick={async () => {
+                  setBulkProcessing(true);
+                  try {
+                    await deleteTasks([...selectedIds]);
+                    setSelectedIds(new Set());
+                    setBulkDeleteOpen(false);
+                  } catch (cause) {
+                    setToast(cause instanceof Error ? cause.message : "Não foi possível excluir a seleção.");
+                  } finally {
+                    setBulkProcessing(false);
+                  }
+                }}
+              >
+                {bulkProcessing && <i className="button-spinner" />}
+                {bulkProcessing ? "Excluindo..." : "Excluir definitivamente"}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
       {selected && (
         <Modal
@@ -1848,6 +2084,89 @@ export function Schedule({
         />
       )}
     </div>
+  );
+}
+
+function DuplicateTaskModal({
+  source,
+  tasks,
+  onClose,
+  onDuplicate,
+}: {
+  source: Task;
+  tasks: Task[];
+  onClose: () => void;
+  onDuplicate: (source: Task, destinationParentId: string) => Promise<void>;
+}) {
+  const [destinationParentId, setDestinationParentId] = useState(
+    source.parentId ?? "",
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const blockedIds = new Set([source.id]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    tasks.forEach((task) => {
+      if (task.parentId && blockedIds.has(task.parentId) && !blockedIds.has(task.id)) {
+        blockedIds.add(task.id);
+        changed = true;
+      }
+    });
+  }
+  const copiedCount = blockedIds.size;
+  return (
+    <Modal
+      title="Copiar estrutura do Gantt"
+      subtitle="A cópia preserva subitens, durações, disciplinas e dependências internas."
+      onClose={() => !saving && onClose()}
+    >
+      <form
+        className="duplicate-task-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setSaving(true);
+          setError("");
+          try {
+            await onDuplicate(source, destinationParentId);
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "Não foi possível copiar a estrutura.");
+            setSaving(false);
+          }
+        }}
+      >
+        <div className="copy-source-card">
+          <Icon name="copy" />
+          <div>
+            <small>ESTRUTURA DE ORIGEM</small>
+            <strong>{source.code} · {source.name}</strong>
+            <span>{copiedCount} {copiedCount === 1 ? "atividade será copiada" : "atividades serão copiadas"}</span>
+          </div>
+        </div>
+        <label>
+          <span>Inserir dentro de</span>
+          <select value={destinationParentId} onChange={(event) => setDestinationParentId(event.target.value)}>
+            <option value="">Nível principal do projeto</option>
+            {tasks.filter((task) => !blockedIds.has(task.id)).map((task) => (
+              <option key={task.id} value={task.id}>{task.code} · {task.name}</option>
+            ))}
+          </select>
+          <small>A nova estrutura entrará como o último subitem do destino escolhido.</small>
+        </label>
+        <div className="modal-note">
+          <Icon name="info" />
+          <p>O progresso da cópia começa em 0%. As datas são preservadas para você ajustar somente o novo conjunto.</p>
+        </div>
+        {error && <div className="access-message"><Icon name="alert" />{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="secondary-btn" disabled={saving} onClick={onClose}>Cancelar</button>
+          <button className="primary-btn" disabled={saving}>
+            {saving ? <span className="button-spinner" /> : <Icon name="copy" />}
+            {saving ? "Copiando..." : "Criar cópia"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -2125,6 +2444,7 @@ function TaskForm({
   const [nextId] = useState(() => initial?.id ?? crypto.randomUUID());
   const [name, setName] = useState(initial?.name ?? "");
   const [phase, setPhase] = useState(initial?.phase ?? "");
+  const [creatingPhase, setCreatingPhase] = useState(false);
   const [plannedStart, setPlannedStart] = useState(
     initial?.plannedStart ?? project.start,
   );
@@ -2132,6 +2452,7 @@ function TaskForm({
     initial?.plannedEnd ?? project.start,
   );
   const [durationWorkDays, setDurationWorkDays] = useState(() =>
+    initial?.durationDays ??
     workingDuration(
       initial?.plannedStart ?? project.start,
       initial?.plannedEnd ?? project.start,
@@ -2181,7 +2502,7 @@ function TaskForm({
   ) {
     const predecessor = tasks.find((task) => task.id === nextDependencyId);
     if (!predecessor) return;
-    const activityDuration = Math.max(1, durationWorkDays);
+    const activityDuration = Math.max(0.01, durationWorkDays);
     if (nextType === "FS" || nextType === "SS") {
       const anchor =
         nextType === "FS"
@@ -2225,6 +2546,7 @@ function TaskForm({
         phase: phase || "Sem etapa",
         plannedStart,
         plannedEnd: effectiveMilestone ? plannedStart : safePlannedEnd,
+        durationDays: effectiveMilestone ? 0.01 : Math.max(0.01, durationWorkDays),
         baselineStart,
         baselineEnd: effectiveMilestone ? baselineStart : safeBaselineEnd,
         progress: initial?.progress ?? 0,
@@ -2290,6 +2612,8 @@ function TaskForm({
   const responsibleGroups = Array.from(
     new Set(responsibleOptions.map((option) => option.group)),
   );
+  const phaseOptions = [...new Set(tasks.map((task) => task.phase).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
   const form = (
     <form className="task-form" onSubmit={submit}>
       <label>
@@ -2311,12 +2635,33 @@ function TaskForm({
       </label>
       <label>
         <span>Etapa / disciplina</span>
-        <input
-          required
-          value={phase}
-          onChange={(event) => setPhase(event.target.value)}
-          placeholder="Estrutura"
-        />
+        <select
+          required={!creatingPhase}
+          value={creatingPhase ? "__new__" : phase}
+          onChange={(event) => {
+            if (event.target.value === "__new__") {
+              setCreatingPhase(true);
+              setPhase("");
+            } else {
+              setCreatingPhase(false);
+              setPhase(event.target.value);
+            }
+          }}
+        >
+          <option value="" disabled>Selecione uma disciplina</option>
+          {phaseOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          <option value="__new__">+ Criar nova disciplina</option>
+        </select>
+        {creatingPhase && (
+          <input
+            autoFocus
+            required
+            value={phase}
+            onChange={(event) => setPhase(event.target.value)}
+            placeholder="Nome da nova disciplina"
+          />
+        )}
+        <small>Reutilize uma disciplina existente para manter os filtros consistentes.</small>
       </label>
       <label>
         <span>Item pai</span>
@@ -2377,12 +2722,13 @@ function TaskForm({
         <span>Duração em dias úteis</span>
         <input
           type="number"
-          min="1"
+          min="0.01"
+          step="0.25"
           required
           disabled={milestone || derivesPeriod}
           value={milestone ? 1 : durationWorkDays}
           onChange={(event) => {
-            const value = Math.max(1, Number(event.target.value));
+            const value = Math.max(0.01, Number(event.target.value));
             setDurationWorkDays(value);
             const end = workingEnd(plannedStart, value, workDays);
             setPlannedEnd(end);

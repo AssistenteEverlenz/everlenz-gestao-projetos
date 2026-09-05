@@ -62,6 +62,7 @@ create table public.tasks (
   notes text,
   planned_start date not null,
   planned_end date not null,
+  duration_days numeric(10,2) check (duration_days > 0),
   baseline_start date,
   baseline_end date,
   actual_start date,

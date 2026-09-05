@@ -45,6 +45,8 @@ export type Task = {
   phase: string;
   plannedStart: string;
   plannedEnd: string;
+  /** Duração planejada em dias úteis; aceita frações como 0,25 e 0,5. */
+  durationDays?: number;
   progress: number;
   weight: number;
   baselineStart?: string;

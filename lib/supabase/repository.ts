@@ -237,6 +237,10 @@ export async function loadWorkspaces(userEmail: string) {
           phase: item.phase,
           plannedStart: item.planned_start,
           plannedEnd: item.planned_end,
+          durationDays:
+            item.duration_days == null
+              ? undefined
+              : Number(item.duration_days),
           baselineStart: item.baseline_start ?? undefined,
           baselineEnd: item.baseline_end ?? undefined,
           progress: Number(item.progress),
@@ -1045,6 +1049,7 @@ export async function updateRemoteTaskDates(projectId: string, tasks: Task[]) {
         .update({
           planned_start: task.plannedStart,
           planned_end: task.plannedEnd,
+          duration_days: task.durationDays ?? null,
         })
         .eq("id", task.id)
         .eq("project_id", projectId),
@@ -1079,6 +1084,7 @@ export async function createRemoteTask(
     notes: task.notes ?? null,
     planned_start: task.plannedStart,
     planned_end: task.plannedEnd,
+    duration_days: task.durationDays ?? null,
     baseline_start: task.baselineStart ?? null,
     baseline_end: task.baselineEnd ?? null,
     progress: task.progress,
@@ -1102,6 +1108,62 @@ export async function createRemoteTask(
         dependency_type: task.dependencyType ?? "FS",
         lag_days: task.lagDays ?? 0,
       });
+    if (dependencyError) throw dependencyError;
+  }
+}
+
+export async function createRemoteTasks(
+  projectId: string,
+  tasks: Task[],
+  members: Member[],
+  sortOrderStart: number,
+) {
+  const supabase = getSupabaseBrowserClient();
+  const rows = tasks.map((task, index) => ({
+    id: task.id,
+    project_id: projectId,
+    parent_id: task.parentId ?? null,
+    wbs: `tmp-${task.id}`,
+    name: task.name,
+    phase: task.phase,
+    notes: task.notes ?? null,
+    planned_start: task.plannedStart,
+    planned_end: task.plannedEnd,
+    duration_days: task.durationDays ?? null,
+    baseline_start: task.baselineStart ?? null,
+    baseline_end: task.baselineEnd ?? null,
+    progress: task.progress,
+    weight: task.weight,
+    responsible_id:
+      task.responsibleKind === "user"
+        ? (task.responsibleRefId ??
+          members.find(
+            (member) => member.name === task.responsible && !member.pending,
+          )?.id ??
+          null)
+        : null,
+    responsible_kind: task.responsibleKind ?? null,
+    responsible_ref_id: task.responsibleRefId ?? null,
+    responsible_label: task.responsible || null,
+    color: task.color,
+    is_milestone: Boolean(task.milestone),
+    is_critical: Boolean(task.critical),
+    sort_order: sortOrderStart + index,
+  }));
+  const { error } = await supabase.from("tasks").insert(rows);
+  if (error) throw error;
+  const dependencies = tasks
+    .filter((task) => task.dependencyId)
+    .map((task) => ({
+      predecessor_id: task.dependencyId!,
+      successor_id: task.id,
+      dependency_type: task.dependencyType ?? "FS",
+      lag_days: task.lagDays ?? 0,
+    }));
+  if (dependencies.length) {
+    const { error: dependencyError } = await supabase
+      .from("task_dependencies")
+      .insert(dependencies);
     if (dependencyError) throw dependencyError;
   }
 }
@@ -1130,6 +1192,7 @@ export async function updateRemoteTask(
       notes: task.notes ?? null,
       planned_start: task.plannedStart,
       planned_end: task.plannedEnd,
+      duration_days: task.durationDays ?? null,
       baseline_start: task.baselineStart ?? null,
       baseline_end: task.baselineEnd ?? null,
       weight: task.weight,
@@ -1188,6 +1251,7 @@ export async function reorderRemoteTasks(projectId: string, tasks: Task[]) {
           wbs: task.code,
           planned_start: task.plannedStart,
           planned_end: task.plannedEnd,
+          duration_days: task.durationDays ?? null,
           baseline_start: task.baselineStart ?? null,
           baseline_end: task.baselineEnd ?? null,
         })
@@ -1226,6 +1290,14 @@ export async function deleteRemoteTask(projectId: string, taskId: string) {
     .delete()
     .eq("id", taskId)
     .eq("project_id", projectId);
+  if (error) throw error;
+}
+
+export async function deleteRemoteTasks(projectId: string, taskIds: string[]) {
+  const { error } = await getSupabaseBrowserClient().rpc(
+    "delete_project_tasks",
+    { p_project_id: projectId, p_task_ids: taskIds },
+  );
   if (error) throw error;
 }
 

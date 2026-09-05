@@ -49,7 +49,19 @@ export function workingEnd(
   let result = start;
   if (!allowed.includes(localDate(result).getDay()))
     result = nextWorkingDay(result, allowed);
-  return shiftWorkingDays(result, Math.max(1, duration) - 1, allowed);
+  return shiftWorkingDays(
+    result,
+    Math.max(1, Math.ceil(Math.max(0.01, duration))) - 1,
+    allowed,
+  );
+}
+
+export function taskWorkingDuration(task: Task, workDays?: number[]) {
+  return Math.max(
+    0.01,
+    task.durationDays ??
+      workingDuration(task.plannedStart, task.plannedEnd, workDays),
+  );
 }
 
 export function workingDuration(
@@ -97,7 +109,9 @@ export function rescheduleTasks(
   const durations = new Map(
     tasks.map((task) => [
       task.id,
-      workingDuration(task.plannedStart, task.plannedEnd, previousDays),
+      tasks.some((child) => child.parentId === task.id)
+        ? workingDuration(task.plannedStart, task.plannedEnd, previousDays)
+        : taskWorkingDuration(task, previousDays),
     ]),
   );
   let result = tasks.map((task) => ({
@@ -133,7 +147,11 @@ export function rescheduleTasks(
       return {
         ...task,
         plannedEnd,
-        plannedStart: shiftWorkingDays(plannedEnd, -(length - 1), nextDays),
+        plannedStart: shiftWorkingDays(
+          plannedEnd,
+          -(Math.ceil(length) - 1),
+          nextDays,
+        ),
       };
     });
   }
@@ -156,7 +174,9 @@ export function rescheduleTaskSuccessors(
   const durations = new Map(
     result.map((task) => [
       task.id,
-      workingDuration(task.plannedStart, task.plannedEnd, workDays),
+      result.some((child) => child.parentId === task.id)
+        ? workingDuration(task.plannedStart, task.plannedEnd, workDays)
+        : taskWorkingDuration(task, workDays),
     ]),
   );
   result = normalizeTaskHierarchy(result);
@@ -269,7 +289,7 @@ export function rescheduleTaskSuccessors(
         successor.plannedEnd = shiftWorkingDays(anchor, lag, workDays);
         successor.plannedStart = shiftWorkingDays(
           successor.plannedEnd,
-          -(duration - 1),
+          -(Math.ceil(duration) - 1),
           workDays,
         );
       }

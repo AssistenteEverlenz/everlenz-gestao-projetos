@@ -53,9 +53,11 @@ import {
   approveRemoteStatusReport,
   createRemoteProject,
   createRemoteTask,
+  createRemoteTasks,
   deleteRemoteMember,
   deleteRemoteEntry,
   deleteRemoteTask,
+  deleteRemoteTasks,
   ensureRemoteStatusReport,
   getProfile,
   inviteRemoteMember,
@@ -504,6 +506,26 @@ export function Workspace() {
     setToast("Atividade adicionada ao cronograma.");
   }
 
+  async function addTasks(tasks: Task[]) {
+    if (!workspace || !tasks.length) return;
+    const normalized = normalizeTaskHierarchy([...workspace.tasks, ...tasks]);
+    const createdIds = new Set(tasks.map((task) => task.id));
+    const created = normalized.filter((task) => createdIds.has(task.id));
+    if (remoteMode) {
+      await createRemoteTasks(
+        workspace.project.id,
+        created,
+        workspace.members,
+        workspace.tasks.length,
+      );
+      await reorderRemoteTasks(workspace.project.id, normalized);
+    }
+    updateCurrent((current) => ({ ...current, tasks: normalized }));
+    setToast(
+      `${created.length} ${created.length === 1 ? "atividade copiada" : "atividades copiadas"} para o cronograma.`,
+    );
+  }
+
   async function editTask(task: Task) {
     if (!workspace) return;
     const previousCode =
@@ -579,6 +601,53 @@ export function Workspace() {
     );
     updateCurrent((current) => ({ ...current, tasks: normalized }));
     setToast("Atividade excluída e EAP reorganizada.");
+  }
+
+  async function deleteTasks(taskIds: string[]) {
+    if (!workspace || !taskIds.length) return;
+    const selectedIds = new Set(taskIds);
+    const included = new Set(taskIds);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      workspace.tasks.forEach((task) => {
+        if (
+          task.parentId &&
+          included.has(task.parentId) &&
+          !included.has(task.id)
+        ) {
+          included.add(task.id);
+          changed = true;
+        }
+      });
+    }
+    const ids = [...included];
+    const blocked = workspace.entries.find((entry) =>
+      included.has(entry.taskId),
+    );
+    if (blocked)
+      throw new Error(
+        "A seleção possui atividade com registros no Diário de Obra e não pode ser excluída.",
+      );
+    if (remoteMode) await deleteRemoteTasks(workspace.project.id, ids);
+    const normalized = normalizeTaskHierarchy(
+      workspace.tasks
+        .filter((task) => !included.has(task.id))
+        .map((task) =>
+          task.dependencyId && included.has(task.dependencyId)
+            ? {
+                ...task,
+                dependencyId: undefined,
+                dependencyType: undefined,
+                lagDays: undefined,
+              }
+            : task,
+        ),
+    );
+    updateCurrent((current) => ({ ...current, tasks: normalized }));
+    setToast(
+      `${selectedIds.size} ${selectedIds.size === 1 ? "item selecionado removido" : "itens selecionados removidos"}; subitens vinculados também foram incluídos.`,
+    );
   }
 
   async function addEntry(entry: JournalEntry) {
@@ -1683,8 +1752,10 @@ export function Workspace() {
             <Schedule
               {...common}
               addTask={addTask}
+              addTasks={addTasks}
               editTask={editTask}
               deleteTask={deleteTask}
+              deleteTasks={deleteTasks}
               editEntry={editEntry}
               deleteEntry={deleteEntry}
               reorderTasks={reorderTasks}
