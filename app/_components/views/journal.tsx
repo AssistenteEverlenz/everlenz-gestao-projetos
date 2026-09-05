@@ -25,7 +25,7 @@ type Props = {
   projectTeams?: ProjectTeam[];
   navigate: (view: ViewId) => void;
   metrics: { overall: number; active: number };
-  addEntry: (entry: JournalEntry) => void;
+  addEntry: (entry: JournalEntry) => Promise<void>;
   editEntry: (entry: JournalEntry) => Promise<void>;
   deleteEntry: (entry: JournalEntry) => Promise<void>;
 };
@@ -471,8 +471,8 @@ export function Journal({
           date={selectedDate}
           author={members.find((member) => member.online)?.name ?? "Usuário"}
           onClose={() => setOpen(false)}
-          onSave={(entry) => {
-            addEntry(entry);
+          onSave={async (entry) => {
+            await addEntry(entry);
             setOpen(false);
           }}
         />
@@ -608,10 +608,12 @@ function JournalForm({
   date: string;
   author: string;
   onClose: () => void;
-  onSave: (entry: JournalEntry) => void;
+  onSave: (entry: JournalEntry) => Promise<void>;
 }) {
   const [step, setStep] = useState(1);
-  const executableTasks = tasks.filter((task) => !tasks.some((child) => child.parentId === task.id));
+  const executableTasks = tasks.filter(
+    (task) => !tasks.some((child) => child.parentId === task.id),
+  );
   const activeTasks = executableTasks.filter((task) => task.progress < 100);
   if (!activeTasks.length) activeTasks.push(...executableTasks);
   const [taskId, setTaskId] = useState(activeTasks[0].id);
@@ -620,10 +622,13 @@ function JournalForm({
   const [description, setDescription] = useState("");
   const [progress, setProgress] = useState(Math.min(5, 100 - task.progress));
   const [crew, setCrew] = useState(0);
-  const [selectedTeams, setSelectedTeams] = useState<Record<string, number>>({});
+  const [selectedTeams, setSelectedTeams] = useState<Record<string, number>>(
+    {},
+  );
   const [weather, setWeather] = useState("Não informado");
   const [photos, setPhotos] = useState<JournalPhoto[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const [dictating, setDictating] = useState(false);
   const maximum = Math.max(0, 100 - task.progress);
@@ -656,32 +661,44 @@ function JournalForm({
     const next = tasks.find((item) => item.id === value)!;
     setProgress(Math.min(5, 100 - next.progress));
   }
-  function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
     const after = Math.min(100, task.progress + progress);
-    onSave({
-      id: crypto.randomUUID(),
-      date,
-      time: new Date().toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      taskId,
-      title: title || task.name,
-      description,
-      progressBefore: task.progress,
-      progressAdded: progress,
-      progressAfter: after,
-      author,
-      weather,
-      crew: effectiveCrew,
-      teams: Object.entries(selectedTeams).map(([teamId, workers]) => ({
-        teamId,
-        name: projectTeams.find((team) => team.id === teamId)?.name ?? "Equipe",
-        workers,
-      })),
-      photos,
-    });
+    setSaving(true);
+    setPhotoError("");
+    try {
+      await onSave({
+        id: crypto.randomUUID(),
+        date,
+        time: new Date().toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        taskId,
+        title: title || task.name,
+        description,
+        progressBefore: task.progress,
+        progressAdded: progress,
+        progressAfter: after,
+        author,
+        weather,
+        crew: effectiveCrew,
+        teams: Object.entries(selectedTeams).map(([teamId, workers]) => ({
+          teamId,
+          name:
+            projectTeams.find((team) => team.id === teamId)?.name ?? "Equipe",
+          workers,
+        })),
+        photos,
+      });
+    } catch (cause) {
+      setPhotoError(
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível salvar o diário.",
+      );
+      setSaving(false);
+    }
   }
   function startDictation() {
     type VoiceEvent = { results: ArrayLike<{ 0: { transcript: string } }> };
@@ -700,7 +717,9 @@ function JournalForm({
     const Recognition =
       voiceWindow.SpeechRecognition ?? voiceWindow.webkitSpeechRecognition;
     if (!Recognition) {
-      setPhotoError("O navegador não oferece ditado. Use o microfone do teclado do celular.");
+      setPhotoError(
+        "O navegador não oferece ditado. Use o microfone do teclado do celular.",
+      );
       return;
     }
     const recognition = new Recognition();
@@ -733,14 +752,29 @@ function JournalForm({
       wide
     >
       <form className="journal-form field-first" onSubmit={submit}>
-        <nav className="journal-wizard-steps full" aria-label="Etapas do diário">
-          {["Atividade", "Avanço", "Fotos", "Descrição", "Revisar"].map((label, index) => (
-            <button key={label} type="button" className={step === index + 1 ? "active" : step > index + 1 ? "done" : ""} onClick={() => index + 1 < step && setStep(index + 1)}>
-              <b>{step > index + 1 ? "✓" : index + 1}</b><span>{label}</span>
-            </button>
-          ))}
+        <nav
+          className="journal-wizard-steps full"
+          aria-label="Etapas do diário"
+        >
+          {["Atividade", "Avanço", "Fotos", "Descrição", "Revisar"].map(
+            (label, index) => (
+              <button
+                key={label}
+                type="button"
+                className={
+                  step === index + 1 ? "active" : step > index + 1 ? "done" : ""
+                }
+                onClick={() => index + 1 < step && setStep(index + 1)}
+              >
+                <b>{step > index + 1 ? "✓" : index + 1}</b>
+                <span>{label}</span>
+              </button>
+            ),
+          )}
         </nav>
-        <label className={`full activity-selector wizard-panel ${step === 1 ? "active" : ""}`}>
+        <label
+          className={`full activity-selector wizard-panel ${step === 1 ? "active" : ""}`}
+        >
           <span>1 · Atividade do cronograma</span>
           <select
             value={taskId}
@@ -756,7 +790,9 @@ function JournalForm({
             {task.responsible || "Sem responsável"} · {task.phase}
           </small>
         </label>
-        <section className={`measurement-card full wizard-panel ${step === 2 ? "active" : ""}`}>
+        <section
+          className={`measurement-card full wizard-panel ${step === 2 ? "active" : ""}`}
+        >
           <div>
             <span>2 · Medição do avanço</span>
             <p>Informe apenas o percentual executado neste dia.</p>
@@ -796,21 +832,65 @@ function JournalForm({
           />
           <small>Disponível para medir: {maximum}%</small>
         </section>
-        {projectTeams.length > 0 && <section className={`team-picker full wizard-panel ${step === 2 ? "active" : ""}`}>
-          <header><div><span>Equipes nesta frente</span><p>Selecione as empresas envolvidas e informe o efetivo.</p></div><strong>{effectiveCrew} pessoas</strong></header>
-          <div>{projectTeams.filter((team) => team.active).map((team) => {
-            const selected = team.id in selectedTeams;
-            return <label className={selected ? "selected" : ""} key={team.id}>
-              <input type="checkbox" checked={selected} onChange={(event) => setSelectedTeams((current) => {
-                const next = { ...current };
-                if (event.target.checked) next[team.id] = 1; else delete next[team.id];
-                return next;
-              })}/>
-              <span><strong>{team.name}</strong><small>{team.company} · {team.specialty}</small></span>
-              {selected && <input aria-label={`Pessoas da ${team.name}`} type="number" min="1" value={selectedTeams[team.id]} onChange={(event) => setSelectedTeams((current) => ({ ...current, [team.id]: Math.max(1, Number(event.target.value)) }))}/>}
-            </label>;
-          })}</div>
-        </section>}
+        {projectTeams.length > 0 && (
+          <section
+            className={`team-picker full wizard-panel ${step === 2 ? "active" : ""}`}
+          >
+            <header>
+              <div>
+                <span>Equipes nesta frente</span>
+                <p>Selecione as empresas envolvidas e informe o efetivo.</p>
+              </div>
+              <strong>{effectiveCrew} pessoas</strong>
+            </header>
+            <div>
+              {projectTeams
+                .filter((team) => team.active)
+                .map((team) => {
+                  const selected = team.id in selectedTeams;
+                  return (
+                    <label className={selected ? "selected" : ""} key={team.id}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={(event) =>
+                          setSelectedTeams((current) => {
+                            const next = { ...current };
+                            if (event.target.checked) next[team.id] = 1;
+                            else delete next[team.id];
+                            return next;
+                          })
+                        }
+                      />
+                      <span>
+                        <strong>{team.name}</strong>
+                        <small>
+                          {team.company} · {team.specialty}
+                        </small>
+                      </span>
+                      {selected && (
+                        <input
+                          aria-label={`Pessoas da ${team.name}`}
+                          type="number"
+                          min="1"
+                          value={selectedTeams[team.id]}
+                          onChange={(event) =>
+                            setSelectedTeams((current) => ({
+                              ...current,
+                              [team.id]: Math.max(
+                                1,
+                                Number(event.target.value),
+                              ),
+                            }))
+                          }
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+            </div>
+          </section>
+        )}
         <label className={`full wizard-panel ${step === 4 ? "active" : ""}`}>
           <span>4 · O que foi realizado</span>
           <input
@@ -821,7 +901,16 @@ function JournalForm({
           />
         </label>
         <label className={`full wizard-panel ${step === 4 ? "active" : ""}`}>
-          <span className="dictation-label">Descrição técnica <button type="button" className={dictating ? "voice-button listening" : "voice-button"} onClick={startDictation}>{dictating ? "Ouvindo..." : "Ditar"}</button></span>
+          <span className="dictation-label">
+            Descrição técnica{" "}
+            <button
+              type="button"
+              className={dictating ? "voice-button listening" : "voice-button"}
+              onClick={startDictation}
+            >
+              {dictating ? "Ouvindo..." : "Ditar"}
+            </button>
+          </span>
           <textarea
             required
             rows={4}
@@ -830,16 +919,18 @@ function JournalForm({
             placeholder="Descreva local, quantidades, condições, intercorrências e próximos passos..."
           />
         </label>
-        {!projectTeams.length && <label className={`wizard-panel ${step === 2 ? "active" : ""}`}>
-          <span>Efetivo nesta frente</span>
-          <input
-            type="number"
-            min="0"
-            required
-            value={crew}
-            onChange={(event) => setCrew(Number(event.target.value))}
-          />
-        </label>}
+        {!projectTeams.length && (
+          <label className={`wizard-panel ${step === 2 ? "active" : ""}`}>
+            <span>Efetivo nesta frente</span>
+            <input
+              type="number"
+              min="0"
+              required
+              value={crew}
+              onChange={(event) => setCrew(Number(event.target.value))}
+            />
+          </label>
+        )}
         <label className={`wizard-panel ${step === 2 ? "active" : ""}`}>
           <span>Condição do tempo</span>
           <select
@@ -854,7 +945,9 @@ function JournalForm({
             <option>Chuva intensa</option>
           </select>
         </label>
-        <label className={`photo-drop full wizard-panel ${step === 3 ? "active" : ""}`}>
+        <label
+          className={`photo-drop full wizard-panel ${step === 3 ? "active" : ""}`}
+        >
           <input
             type="file"
             accept="image/*"
@@ -880,13 +973,17 @@ function JournalForm({
           </em>
         </label>
         {photoError && (
-          <div className={`access-message full wizard-panel ${step === 3 || step === 4 ? "active" : ""}`}>
+          <div
+            className={`access-message full wizard-panel ${step === 3 || step === 4 ? "active" : ""}`}
+          >
             <Icon name="alert" />
             {photoError}
           </div>
         )}
         {photos.length > 0 && (
-          <div className={`upload-grid full wizard-panel ${step === 3 ? "active" : ""}`}>
+          <div
+            className={`upload-grid full wizard-panel ${step === 3 ? "active" : ""}`}
+          >
             {photos.map((photo, index) => (
               <div key={`${photo.url.slice(0, 24)}-${index}`}>
                 <img src={photo.url} alt={`Prévia ${index + 1}`} />
@@ -908,13 +1005,37 @@ function JournalForm({
             ))}
           </div>
         )}
-        <div className={`wizard-review full wizard-panel ${step === 5 ? "active" : ""}`}>
-          <div><span>ATIVIDADE</span><strong>{task.code} · {task.name}</strong><small>{task.phase}</small></div>
-          <div><span>AVANÇO DO DIA</span><strong>+{progress}%</strong><small>{task.progress}% → {task.progress + progress}%</small></div>
-          <div><span>EVIDÊNCIAS</span><strong>{photos.length} fotos</strong><small>{effectiveCrew} pessoas em campo</small></div>
-          <div className="full"><span>EXECUÇÃO</span><strong>{title}</strong><small>{description}</small></div>
+        <div
+          className={`wizard-review full wizard-panel ${step === 5 ? "active" : ""}`}
+        >
+          <div>
+            <span>ATIVIDADE</span>
+            <strong>
+              {task.code} · {task.name}
+            </strong>
+            <small>{task.phase}</small>
+          </div>
+          <div>
+            <span>AVANÇO DO DIA</span>
+            <strong>+{progress}%</strong>
+            <small>
+              {task.progress}% → {task.progress + progress}%
+            </small>
+          </div>
+          <div>
+            <span>EVIDÊNCIAS</span>
+            <strong>{photos.length} fotos</strong>
+            <small>{effectiveCrew} pessoas em campo</small>
+          </div>
+          <div className="full">
+            <span>EXECUÇÃO</span>
+            <strong>{title}</strong>
+            <small>{description}</small>
+          </div>
         </div>
-        <div className={`save-summary full wizard-panel ${step === 5 ? "active" : ""}`}>
+        <div
+          className={`save-summary full wizard-panel ${step === 5 ? "active" : ""}`}
+        >
           <Icon name="check" />
           <span>
             <strong>Ao salvar</strong>
@@ -926,8 +1047,38 @@ function JournalForm({
           </span>
         </div>
         <div className="modal-actions full">
-          <button type="button" className="secondary-btn" onClick={() => step === 1 ? onClose() : setStep((current) => current - 1)}>{step === 1 ? "Cancelar" : "Voltar"}</button>
-          {step < 5 ? <button type="button" className="primary-btn" disabled={!canAdvance || loadingPhotos} onClick={() => setStep((current) => current + 1)}>Continuar <Icon name="arrow" /></button> : <button className="primary-btn" disabled={loadingPhotos}><Icon name="check" /> Salvar diário e atualizar Gantt</button>}
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={() =>
+              step === 1 ? onClose() : setStep((current) => current - 1)
+            }
+          >
+            {step === 1 ? "Cancelar" : "Voltar"}
+          </button>
+          {step < 5 ? (
+            <button
+              type="button"
+              className="primary-btn"
+              disabled={!canAdvance || loadingPhotos || saving}
+              onClick={() => setStep((current) => current + 1)}
+            >
+              Continuar <Icon name="arrow" />
+            </button>
+          ) : (
+            <button className="primary-btn" disabled={loadingPhotos || saving}>
+              {saving ? (
+                <>
+                  <span className="button-spinner" />
+                  Salvando diário...
+                </>
+              ) : (
+                <>
+                  <Icon name="check" /> Salvar diário e atualizar Gantt
+                </>
+              )}
+            </button>
+          )}
         </div>
       </form>
     </Modal>

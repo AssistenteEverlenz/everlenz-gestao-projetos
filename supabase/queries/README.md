@@ -19,6 +19,7 @@ Execute os arquivos no SQL Editor de um projeto Supabase novo, nesta ordem:
 15. 015_stock_receivers.sql
 16. 016_inventory_movement_management.sql
 17. 017_project_portfolio_and_task_responsibles.sql
+18. 018_brand_identity.sql
 
 O fluxo crítico usa a função record_daily_progress. Ela bloqueia a atividade,
 calcula o percentual final e grava diário, medição e metadados das fotos na mesma
@@ -49,3 +50,7 @@ rastreáveis para retiradas e a numeração interna automática das movimentaç�
 A migration 016 permite que administradores e gestores editem ou excluam
 movimentações com recálculo transacional de todo o histórico, saldos e consumos
 por EAP. As versões anteriores ficam preservadas na trilha de auditoria.
+
+A migration 018 cria a identidade visual configurável, com um PNG para a
+organização e outro para cada projeto. Os arquivos ficam no bucket público
+`brand-assets`; somente administradores e gestores podem alterá-los.

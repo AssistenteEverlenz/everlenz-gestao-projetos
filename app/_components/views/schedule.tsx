@@ -42,13 +42,13 @@ type Props = {
   projectTeams?: ProjectTeam[];
   navigate: (view: ViewId) => void;
   metrics: { overall: number; active: number };
-  addTask: (task: Task) => void;
+  addTask: (task: Task) => Promise<void>;
   editTask: (task: Task) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
   editEntry: (entry: JournalEntry) => Promise<void>;
   deleteEntry: (entry: JournalEntry) => Promise<void>;
   reorderTasks: (tasks: Task[]) => Promise<void>;
-  updateTaskProgress: (id: string, progress: number) => void;
+  updateTaskProgress: (id: string, progress: number) => Promise<void>;
   updateProjectWorkDays: (workDays: number[]) => Promise<void>;
   setToast: (value: string) => void;
 };
@@ -136,6 +136,7 @@ export function Schedule({
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
+  const [savingProgress, setSavingProgress] = useState(false);
   const [editing, setEditing] = useState(false);
   const [historyTask, setHistoryTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
@@ -227,26 +228,20 @@ export function Schedule({
       return true;
     });
   }, [collapsedIds, filterCritical, hideCompleted, orderedTasks, statusFilter]);
-  const timelineStart = tasks.reduce(
-    (value, task) => {
-      const earliest =
-        task.baselineStart && task.baselineStart < task.plannedStart
-          ? task.baselineStart
-          : task.plannedStart;
-      return earliest < value ? earliest : value;
-    },
-    project.start,
-  );
-  const timelineEnd = tasks.reduce(
-    (value, task) => {
-      const latest =
-        task.baselineEnd && task.baselineEnd > task.plannedEnd
-          ? task.baselineEnd
-          : task.plannedEnd;
-      return latest > value ? latest : value;
-    },
-    project.end,
-  );
+  const timelineStart = tasks.reduce((value, task) => {
+    const earliest =
+      task.baselineStart && task.baselineStart < task.plannedStart
+        ? task.baselineStart
+        : task.plannedStart;
+    return earliest < value ? earliest : value;
+  }, project.start);
+  const timelineEnd = tasks.reduce((value, task) => {
+    const latest =
+      task.baselineEnd && task.baselineEnd > task.plannedEnd
+        ? task.baselineEnd
+        : task.plannedEnd;
+    return latest > value ? latest : value;
+  }, project.end);
   const projectDays = Math.max(1, daysBetween(timelineStart, timelineEnd) + 1);
   const planned = useMemo(() => {
     const measurable = tasks.filter(
@@ -289,14 +284,11 @@ export function Schedule({
       );
     }
     if (zoom === "Semanas") {
-      return Array.from(
-        { length: Math.ceil(projectDays / 7) },
-        (_, index) => {
-          const startOffset = index * 7;
-          const endOffset = Math.min(projectDays - 1, startOffset + 6);
-          return `${shortDate(dateAt(startOffset))} – ${shortDate(dateAt(endOffset))}`;
-        },
-      );
+      return Array.from({ length: Math.ceil(projectDays / 7) }, (_, index) => {
+        const startOffset = index * 7;
+        const endOffset = Math.min(projectDays - 1, startOffset + 6);
+        return `${shortDate(dateAt(startOffset))} – ${shortDate(dateAt(endOffset))}`;
+      });
     }
 
     const sections = Math.min(8, projectDays);
@@ -552,10 +544,7 @@ export function Schedule({
       suppressTaskClick.current = false;
     }, 0);
   }
-  function openTaskFromTable(
-    event: React.MouseEvent<HTMLElement>,
-    task: Task,
-  ) {
+  function openTaskFromTable(event: React.MouseEvent<HTMLElement>, task: Task) {
     if (
       suppressTaskClick.current ||
       (event.target as HTMLElement).closest(".drag-grip,.tree-toggle")
@@ -645,8 +634,8 @@ export function Schedule({
             members={members}
             projectTeams={projectTeams}
             onClose={() => setCreating(false)}
-            onSave={(task) => {
-              addTask(task);
+            onSave={async (task) => {
+              await addTask(task);
               setCreating(false);
             }}
           />
@@ -764,7 +753,10 @@ export function Schedule({
               <small>CRONOGRAMA COMPLETO</small>
               <strong>{project.name}</strong>
             </div>
-            <div className="mobile-gantt-zoom" aria-label={`Zoom atual: ${zoom}`}>
+            <div
+              className="mobile-gantt-zoom"
+              aria-label={`Zoom atual: ${zoom}`}
+            >
               <button
                 disabled={zoomIndex === 0}
                 onClick={() => setZoom(zoomLevels[Math.max(0, zoomIndex - 1)])}
@@ -777,9 +769,7 @@ export function Schedule({
                 disabled={zoomIndex === zoomLevels.length - 1}
                 onClick={() =>
                   setZoom(
-                    zoomLevels[
-                      Math.min(zoomLevels.length - 1, zoomIndex + 1)
-                    ],
+                    zoomLevels[Math.min(zoomLevels.length - 1, zoomIndex + 1)],
                   )
                 }
                 aria-label="Aumentar zoom"
@@ -797,7 +787,9 @@ export function Schedule({
               }
             >
               <Icon name="menu" />
-              {showMobileTaskTable ? "Ocultar atividades" : "Mostrar atividades"}
+              {showMobileTaskTable
+                ? "Ocultar atividades"
+                : "Mostrar atividades"}
             </button>
             <button
               className="icon-btn"
@@ -1012,8 +1004,10 @@ export function Schedule({
                     if (sourceIndex < 0) return null;
                     const predecessor = visible[sourceIndex];
                     const relation = task.dependencyType ?? "FS";
-                    const sourceUsesFinish = relation === "FS" || relation === "FF";
-                    const targetUsesFinish = relation === "FF" || relation === "SF";
+                    const sourceUsesFinish =
+                      relation === "FS" || relation === "FF";
+                    const targetUsesFinish =
+                      relation === "FF" || relation === "SF";
                     const sourceDate = sourceUsesFinish
                       ? predecessor.plannedEnd
                       : predecessor.plannedStart;
@@ -1025,7 +1019,8 @@ export function Schedule({
                         3,
                         Math.min(
                           997,
-                          ((daysBetween(timelineStart, value) + (finish ? 1 : 0)) /
+                          ((daysBetween(timelineStart, value) +
+                            (finish ? 1 : 0)) /
                             projectDays) *
                             1000,
                         ),
@@ -1035,13 +1030,14 @@ export function Schedule({
                     const sourceY = sourceIndex * 44 + 22;
                     const targetY = targetIndex * 44 + 22;
                     const rowDirection = targetY >= sourceY ? 1 : -1;
-                    const dependencyIndex = visible
-                      .slice(0, targetIndex + 1)
-                      .filter((candidate) =>
-                        visible.some(
-                          (source) => source.id === candidate.dependencyId,
-                        ),
-                      ).length - 1;
+                    const dependencyIndex =
+                      visible
+                        .slice(0, targetIndex + 1)
+                        .filter((candidate) =>
+                          visible.some(
+                            (source) => source.id === candidate.dependencyId,
+                          ),
+                        ).length - 1;
                     const laneOffset = Math.max(0, dependencyIndex % 8) * 4;
                     const sourceExitX = Math.max(
                       4,
@@ -1059,7 +1055,8 @@ export function Schedule({
                     );
                     const approachY =
                       targetY -
-                      rowDirection * (12 + Math.max(0, dependencyIndex % 4) * 3);
+                      rowDirection *
+                        (12 + Math.max(0, dependencyIndex % 4) * 3);
                     const dependencyPath = roundedOrthogonalPath(
                       [
                         { x: sourceX, y: sourceY },
@@ -1099,7 +1096,10 @@ export function Schedule({
                         ))}
                       </div>
                       {showBaseline && (
-                        <span className="baseline-bar" style={barStyle(task, true)} />
+                        <span
+                          className="baseline-bar"
+                          style={barStyle(task, true)}
+                        />
                       )}
                       {task.milestone ? (
                         <span
@@ -1186,7 +1186,10 @@ export function Schedule({
             );
             const timelineWidth = Math.max(
               4,
-              Math.min(100 - timelineLeft, (duration(task) / projectDays) * 100),
+              Math.min(
+                100 - timelineLeft,
+                (duration(task) / projectDays) * 100,
+              ),
             );
             return (
               <button
@@ -1249,7 +1252,8 @@ export function Schedule({
                       </strong>
                       <span className="mobile-task-dates">
                         <Icon name="calendar" />
-                        {formatDate(task.plannedStart)} — {formatDate(task.plannedEnd)}
+                        {formatDate(task.plannedStart)} —{" "}
+                        {formatDate(task.plannedEnd)}
                         {journalCount > 0 && (
                           <em className="mobile-journal-count">
                             <Icon name="journal" />
@@ -1348,8 +1352,8 @@ export function Schedule({
           members={members}
           projectTeams={projectTeams}
           onClose={() => setCreating(false)}
-          onSave={(task) => {
-            addTask(task);
+          onSave={async (task) => {
+            await addTask(task);
             setCreating(false);
           }}
         />
@@ -1509,13 +1513,36 @@ export function Schedule({
                 {!tasks.some((task) => task.parentId === selected.id) && (
                   <button
                     className="primary-btn"
-                    onClick={() => {
-                      updateTaskProgress(selected.id, selected.progress);
-                      setSelected(null);
-                      setToast("Progresso manual atualizado.");
+                    disabled={savingProgress}
+                    onClick={async () => {
+                      setSavingProgress(true);
+                      try {
+                        await updateTaskProgress(
+                          selected.id,
+                          selected.progress,
+                        );
+                        setSelected(null);
+                      } catch (cause) {
+                        setToast(
+                          cause instanceof Error
+                            ? cause.message
+                            : "Não foi possível salvar o avanço.",
+                        );
+                      } finally {
+                        setSavingProgress(false);
+                      }
                     }}
                   >
-                    <Icon name="check" /> Salvar avanço
+                    {savingProgress ? (
+                      <>
+                        <span className="button-spinner" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="check" /> Salvar avanço
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -1715,8 +1742,9 @@ function TaskForm({
     initial?.baselineEnd ?? project.start,
   );
   const [responsible, setResponsible] = useState(initial?.responsible ?? "");
-  const [responsibleKind, setResponsibleKind] =
-    useState<TaskResponsibleKind | undefined>(initial?.responsibleKind);
+  const [responsibleKind, setResponsibleKind] = useState<
+    TaskResponsibleKind | undefined
+  >(initial?.responsibleKind);
   const [responsibleRefId, setResponsibleRefId] = useState(
     initial?.responsibleRefId ?? "",
   );
@@ -1850,7 +1878,8 @@ function TaskForm({
     responsibleKind && responsibleRefId
       ? `${responsibleKind}:${responsibleRefId}`
       : responsible
-        ? responsibleOptions.find((option) => option.label === responsible)?.key ?? ""
+        ? (responsibleOptions.find((option) => option.label === responsible)
+            ?.key ?? "")
         : "";
   const responsibleGroups = Array.from(
     new Set(responsibleOptions.map((option) => option.group)),
@@ -2117,7 +2146,7 @@ function TaskForm({
           Cancelar
         </button>
         <button className="primary-btn" disabled={saving}>
-          <Icon name="check" />{" "}
+          {saving ? <span className="button-spinner" /> : <Icon name="check" />}{" "}
           {saving
             ? "Salvando..."
             : initial

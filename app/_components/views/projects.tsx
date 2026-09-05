@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- logos configuráveis vêm do storage */
 
 import { useMemo, useState } from "react";
 import { Icon } from "../icons";
@@ -29,19 +30,21 @@ function projectProgress(workspace: ProjectWorkspace) {
   const weight = measurable.reduce((sum, task) => sum + task.weight, 0);
   return weight
     ? Math.round(
-        measurable.reduce(
-          (sum, task) => sum + task.progress * task.weight,
-          0,
-        ) / weight,
+        measurable.reduce((sum, task) => sum + task.progress * task.weight, 0) /
+          weight,
       )
     : 0;
 }
 
-function portfolioStatus(workspace: ProjectWorkspace): Exclude<PortfolioStatus, "all"> {
+function portfolioStatus(
+  workspace: ProjectWorkspace,
+): Exclude<PortfolioStatus, "all"> {
   if (workspace.project.archivedAt) return "archived";
   const progress = projectProgress(workspace);
-  if (progress >= 100 || workspace.project.status === "Concluída") return "completed";
-  if (progress > 0 || workspace.tasks.some((task) => task.progress > 0)) return "active";
+  if (progress >= 100 || workspace.project.status === "Concluída")
+    return "completed";
+  if (progress > 0 || workspace.tasks.some((task) => task.progress > 0))
+    return "active";
   return "waiting";
 }
 
@@ -61,7 +64,10 @@ export function Projects({
 }: Props) {
   const [filter, setFilter] = useState<PortfolioStatus>("all");
   const [search, setSearch] = useState("");
-  const [archiveTarget, setArchiveTarget] = useState<ProjectWorkspace | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<ProjectWorkspace | null>(
+    null,
+  );
+  const [archiveConfirmation, setArchiveConfirmation] = useState("");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const items = useMemo(
     () =>
@@ -72,8 +78,12 @@ export function Projects({
           (filter === "all" || status === filter) &&
           (!query ||
             workspace.project.name.toLocaleLowerCase("pt-BR").includes(query) ||
-            workspace.project.client.toLocaleLowerCase("pt-BR").includes(query) ||
-            workspace.project.location.toLocaleLowerCase("pt-BR").includes(query))
+            workspace.project.client
+              .toLocaleLowerCase("pt-BR")
+              .includes(query) ||
+            workspace.project.location
+              .toLocaleLowerCase("pt-BR")
+              .includes(query))
         );
       }),
     [filter, search, workspaces],
@@ -91,11 +101,16 @@ export function Projects({
   );
 
   function canManage(workspace: ProjectWorkspace) {
-    const role = workspace.members.find((member) => member.id === currentUserId)?.role;
+    const role = workspace.members.find(
+      (member) => member.id === currentUserId,
+    )?.role;
     return role === "Administrador" || role === "Gestor";
   }
 
-  async function changeArchived(workspace: ProjectWorkspace, archived: boolean) {
+  async function changeArchived(
+    workspace: ProjectWorkspace,
+    archived: boolean,
+  ) {
     setProcessingId(workspace.project.id);
     try {
       await onArchive(workspace.project.id, archived);
@@ -111,7 +126,10 @@ export function Projects({
         <div>
           <span className="overline">PORTFÓLIO DA OPERAÇÃO</span>
           <h2>Todos os projetos em um só lugar</h2>
-          <p>Acompanhe obras ativas, concluídas e arquivadas sem perder o histórico.</p>
+          <p>
+            Acompanhe obras ativas, concluídas e arquivadas sem perder o
+            histórico.
+          </p>
         </div>
         <button className="primary-btn" onClick={onCreate}>
           <Icon name="plus" /> Novo projeto
@@ -125,13 +143,15 @@ export function Projects({
           />
         </label>
         <div className="portfolio-filters">
-          {([
-            ["all", "Todos", workspaces.length],
-            ["active", "Em andamento", counts.active],
-            ["waiting", "Não iniciados", counts.waiting],
-            ["completed", "Concluídos", counts.completed],
-            ["archived", "Excluídos", counts.archived],
-          ] as const).map(([value, label, count]) => (
+          {(
+            [
+              ["all", "Todos", workspaces.length],
+              ["active", "Em andamento", counts.active],
+              ["waiting", "Não iniciados", counts.waiting],
+              ["completed", "Concluídos", counts.completed],
+              ["archived", "Excluídos", counts.archived],
+            ] as const
+          ).map(([value, label, count]) => (
             <button
               key={value}
               className={filter === value ? "active" : ""}
@@ -151,50 +171,96 @@ export function Projects({
             (task) => task.progress > 0 && task.progress < 100,
           ).length;
           return (
-            <article className={`project-card glass project-${status}`} key={workspace.project.id}>
+            <article
+              className={`project-card glass project-${status}`}
+              key={workspace.project.id}
+            >
               <header>
                 <span className="project-card-monogram">
-                  {workspace.project.name
-                    .split(/\s+/)
-                    .map((part) => part[0])
-                    .slice(0, 2)
-                    .join("")
-                    .toUpperCase()}
+                  {workspace.project.logoUrl ? (
+                    <img
+                      src={workspace.project.logoUrl}
+                      alt={`Logo ${workspace.project.client}`}
+                    />
+                  ) : (
+                    workspace.project.name
+                      .split(/\s+/)
+                      .map((part) => part[0])
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase()
+                  )}
                 </span>
                 <div>
                   <small>{workspace.project.client}</small>
                   <h3>{workspace.project.name}</h3>
-                  <p><Icon name="building" /> {workspace.project.location}</p>
+                  <p>
+                    <Icon name="building" /> {workspace.project.location}
+                  </p>
                 </div>
-                <span className={`portfolio-status ${status}`}><i />{statusLabels[status]}</span>
+                <span className={`portfolio-status ${status}`}>
+                  <i />
+                  {statusLabels[status]}
+                </span>
               </header>
               <div className="project-card-progress">
-                <span><b>Avanço físico</b><strong>{progress}%</strong></span>
-                <i><b style={{ width: `${progress}%` }} /></i>
+                <span>
+                  <b>Avanço físico</b>
+                  <strong>{progress}%</strong>
+                </span>
+                <i>
+                  <b style={{ width: `${progress}%` }} />
+                </i>
               </div>
               <div className="project-card-facts">
-                <span><small>INÍCIO</small><strong>{formatDate(workspace.project.start)}</strong></span>
-                <span><small>TÉRMINO</small><strong>{formatDate(workspace.project.end)}</strong></span>
-                <span><small>CRONOGRAMA</small><strong>{workspace.tasks.length} atividades</strong></span>
-                <span><small>EM EXECUÇÃO</small><strong>{activeTasks} atividades</strong></span>
+                <span>
+                  <small>INÍCIO</small>
+                  <strong>{formatDate(workspace.project.start)}</strong>
+                </span>
+                <span>
+                  <small>TÉRMINO</small>
+                  <strong>{formatDate(workspace.project.end)}</strong>
+                </span>
+                <span>
+                  <small>CRONOGRAMA</small>
+                  <strong>{workspace.tasks.length} atividades</strong>
+                </span>
+                <span>
+                  <small>EM EXECUÇÃO</small>
+                  <strong>{activeTasks} atividades</strong>
+                </span>
               </div>
               <footer>
                 {status !== "archived" ? (
-                  <button className="primary-btn" onClick={() => onOpen(workspace.project.id)}>
+                  <button
+                    className="primary-btn"
+                    onClick={() => onOpen(workspace.project.id)}
+                  >
                     Abrir projeto <Icon name="arrow" />
                   </button>
                 ) : (
                   <button
                     className="primary-btn"
-                    disabled={processingId === workspace.project.id || !canManage(workspace)}
+                    disabled={
+                      processingId === workspace.project.id ||
+                      !canManage(workspace)
+                    }
                     onClick={() => void changeArchived(workspace, false)}
                   >
-                    {processingId === workspace.project.id && <i className="button-spinner" />}
+                    {processingId === workspace.project.id && (
+                      <i className="button-spinner" />
+                    )}
                     Reabrir projeto
                   </button>
                 )}
                 {status !== "archived" && canManage(workspace) && (
-                  <button className="secondary-btn danger" onClick={() => setArchiveTarget(workspace)}>
+                  <button
+                    className="secondary-btn danger"
+                    onClick={() => {
+                      setArchiveConfirmation("");
+                      setArchiveTarget(workspace);
+                    }}
+                  >
                     <Icon name="trash" /> Excluir
                   </button>
                 )}
@@ -218,12 +284,43 @@ export function Projects({
           onClose={() => processingId === null && setArchiveTarget(null)}
         >
           <div className="confirm-delete-modal">
-            <span className="confirm-delete-icon"><Icon name="trash" /></span>
+            <span className="confirm-delete-icon">
+              <Icon name="trash" />
+            </span>
             <h3>Arquivar {archiveTarget.project.name}?</h3>
-            <p>O projeto sairá das obras ativas, mas continuará disponível no filtro Excluídos para reabertura.</p>
+            <p>
+              O projeto sairá das obras ativas, mas continuará disponível no
+              filtro Excluídos para reabertura.
+            </p>
+            <label className="delete-confirmation-field">
+              <span>
+                Digite <strong>EXCLUIR</strong> para confirmar
+              </span>
+              <input
+                autoFocus
+                autoComplete="off"
+                value={archiveConfirmation}
+                onChange={(event) => setArchiveConfirmation(event.target.value)}
+                placeholder="EXCLUIR"
+              />
+            </label>
             <div className="modal-actions">
-              <button className="secondary-btn" disabled={processingId !== null} onClick={() => setArchiveTarget(null)}>Cancelar</button>
-              <button className="primary-btn danger" disabled={processingId !== null} onClick={() => void changeArchived(archiveTarget, true)}>
+              <button
+                className="secondary-btn"
+                disabled={processingId !== null}
+                onClick={() => setArchiveTarget(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="danger-btn"
+                disabled={
+                  processingId !== null ||
+                  archiveConfirmation.trim().toLocaleUpperCase("pt-BR") !==
+                    "EXCLUIR"
+                }
+                onClick={() => void changeArchived(archiveTarget, true)}
+              >
                 {processingId !== null && <i className="button-spinner" />}
                 {processingId !== null ? "Excluindo..." : "Excluir projeto"}
               </button>

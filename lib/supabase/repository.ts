@@ -12,7 +12,7 @@ import type {
   Task,
 } from "@/app/_components/types";
 import { getSupabaseBrowserClient } from "./client";
-import { uploadWorksitePhotos } from "./storage";
+import { uploadBrandAsset, uploadWorksitePhotos } from "./storage";
 
 type ProfileState = {
   id: string;
@@ -85,12 +85,29 @@ export async function loadWorkspaces(userEmail: string) {
   if (!profile.organization_id)
     return { profile, workspaces: [] as ProjectWorkspace[] };
 
-  const { data: projectRows, error: projectError } = await supabase
+  const { data: organization, error: organizationError } = await supabase
+    .from("organizations")
+    .select("name,logo_url")
+    .eq("id", profile.organization_id)
+    .single();
+  if (organizationError) throw organizationError;
+
+  let { data: projectRows, error: projectError } = await supabase
     .from("projects")
     .select(
-      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at",
+      "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at,logo_path",
     )
     .order("created_at");
+  if (projectError?.message.includes("logo_path")) {
+    const fallback = await supabase
+      .from("projects")
+      .select(
+        "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at",
+      )
+      .order("created_at");
+    projectRows = fallback.data?.map((row) => ({ ...row, logo_path: null })) ?? null;
+    projectError = fallback.error;
+  }
   if (projectError) throw projectError;
 
   const workspaces = await Promise.all(
@@ -143,22 +160,30 @@ export async function loadWorkspaces(userEmail: string) {
           .order("name"),
         supabase
           .from("project_team_members")
-          .select("id,team_id,name,role,phone,active,project_teams!inner(project_id)")
+          .select(
+            "id,team_id,name,role,phone,active,project_teams!inner(project_id)",
+          )
           .eq("project_teams.project_id", row.id)
           .eq("active", true)
           .order("name"),
         supabase
           .from("task_update_teams")
-          .select("update_id,team_id,worker_count,project_teams!inner(name,project_id)")
+          .select(
+            "update_id,team_id,worker_count,project_teams!inner(name,project_id)",
+          )
           .eq("project_teams.project_id", row.id),
         supabase
           .from("inventory_items")
-          .select("id,name,category,sku,unit,current_quantity,minimum_quantity,lead_days,inventory_allocations(id,task_id,planned_quantity,consumed_quantity)")
+          .select(
+            "id,name,category,sku,unit,current_quantity,minimum_quantity,lead_days,inventory_allocations(id,task_id,planned_quantity,consumed_quantity)",
+          )
           .eq("project_id", row.id)
           .order("name"),
         supabase
           .from("project_issues")
-          .select("id,title,description,category,priority,status,task_id,due_date,created_at")
+          .select(
+            "id,title,description,category,priority,status,task_id,due_date,created_at",
+          )
           .eq("project_id", row.id)
           .order("created_at", { ascending: false }),
         supabase
@@ -168,12 +193,16 @@ export async function loadWorkspaces(userEmail: string) {
           .order("created_at"),
         supabase
           .from("inventory_movements")
-          .select("id,movement_number,item_id,task_id,movement_type,quantity,purpose,receiver_name,receiver_kind,receiver_id,document_number,balance_after,request_id,created_at,updated_at,creator:profiles!inventory_movements_created_by_fkey(full_name),updater:profiles!inventory_movements_updated_by_fkey(full_name),inventory_items!inner(project_id)")
+          .select(
+            "id,movement_number,item_id,task_id,movement_type,quantity,purpose,receiver_name,receiver_kind,receiver_id,document_number,balance_after,request_id,created_at,updated_at,creator:profiles!inventory_movements_created_by_fkey(full_name),updater:profiles!inventory_movements_updated_by_fkey(full_name),inventory_items!inner(project_id)",
+          )
           .eq("inventory_items.project_id", row.id)
           .order("created_at", { ascending: false }),
         supabase
           .from("inventory_requests")
-          .select("id,item_id,task_id,quantity,purpose,status,review_note,requested_at,profiles!inventory_requests_requested_by_fkey(full_name),reviewer:profiles!inventory_requests_reviewed_by_fkey(full_name),fulfiller:profiles!inventory_requests_fulfilled_by_fkey(full_name)")
+          .select(
+            "id,item_id,task_id,quantity,purpose,status,review_note,requested_at,profiles!inventory_requests_requested_by_fkey(full_name),reviewer:profiles!inventory_requests_reviewed_by_fkey(full_name),fulfiller:profiles!inventory_requests_fulfilled_by_fkey(full_name)",
+          )
           .eq("project_id", row.id)
           .order("requested_at", { ascending: false }),
       ]);
@@ -278,7 +307,9 @@ export async function loadWorkspaces(userEmail: string) {
         return {
           id: membership.user_id,
           name,
-          email: related?.email || (membership.user_id === profile.id ? userEmail : ""),
+          email:
+            related?.email ||
+            (membership.user_id === profile.id ? userEmail : ""),
           role: roleMap[membership.role] ?? "Usuário",
           initials: name
             .split(" ")
@@ -317,92 +348,129 @@ export async function loadWorkspaces(userEmail: string) {
           status: statusMap[row.status] ?? "Planejamento",
           workDays: row.work_days ?? [1, 2, 3, 4, 5],
           archivedAt: row.archived_at ?? undefined,
+          logoUrl: row.logo_path
+            ? supabase.storage.from("brand-assets").getPublicUrl(row.logo_path)
+                .data.publicUrl
+            : undefined,
+          organizationName: organization.name,
+          organizationLogoUrl: organization.logo_url
+            ? supabase.storage
+                .from("brand-assets")
+                .getPublicUrl(organization.logo_url).data.publicUrl
+            : undefined,
         },
         tasks,
         entries,
         members,
-        projectTeams: (projectTeamRows ?? []).map((team) => ({
-          id: team.id,
-          name: team.name,
-          company: team.company,
-          specialty: team.specialty,
-          contact: team.contact ?? undefined,
-          active: team.active,
-          members: (projectTeamMemberRows ?? []).filter((member) => member.team_id === team.id).map((member) => ({
-            id: member.id,
-            name: member.name,
-            role: member.role ?? undefined,
-            phone: member.phone ?? undefined,
-            active: member.active,
-          })),
-        } satisfies ProjectTeam)),
-        inventory: (inventoryRows ?? []).map((item) => ({
-          id: item.id,
-          name: item.name,
-          category: item.category,
-          sku: item.sku ?? undefined,
-          unit: item.unit,
-          quantity: Number(item.current_quantity),
-          minimum: Number(item.minimum_quantity),
-          leadDays: item.lead_days,
-          allocations: (item.inventory_allocations ?? []).map((allocation) => ({
-            id: allocation.id,
-            taskId: allocation.task_id,
-            planned: Number(allocation.planned_quantity),
-            consumed: Number(allocation.consumed_quantity),
-          })),
-          movements: (movementRows ?? []).filter((movement) => movement.item_id === item.id).map((movement) => {
-            const creator = Array.isArray(movement.creator) ? movement.creator[0] : movement.creator;
-            const updater = Array.isArray(movement.updater) ? movement.updater[0] : movement.updater;
-            return {
-              id: movement.id,
-              internalCode: `MOV-${String(movement.movement_number).padStart(6, "0")}`,
-              type: movement.movement_type,
-              quantity: Number(movement.quantity),
-              balanceAfter: Number(movement.balance_after),
-              taskId: movement.task_id ?? undefined,
-              purpose: movement.purpose || "Movimentação de estoque",
-              receiver: movement.receiver_name ?? undefined,
-              receiverKind: movement.receiver_kind ?? undefined,
-              receiverId: movement.receiver_id ?? undefined,
-              document: movement.document_number ?? undefined,
-              requestId: movement.request_id ?? undefined,
-              createdBy: creator?.full_name ?? "Usuário",
-              createdAt: movement.created_at,
-              updatedBy: updater?.full_name ?? undefined,
-              updatedAt: movement.updated_at ?? undefined,
-            };
-          }),
-          requests: (requestRows ?? []).filter((request) => request.item_id === item.id).map((request) => {
-            const requester = Array.isArray(request.profiles) ? request.profiles[0] : request.profiles;
-            const reviewer = Array.isArray(request.reviewer) ? request.reviewer[0] : request.reviewer;
-            const fulfiller = Array.isArray(request.fulfiller) ? request.fulfiller[0] : request.fulfiller;
-            return {
-              id: request.id,
-              itemId: request.item_id,
-              taskId: request.task_id ?? undefined,
-              quantity: Number(request.quantity),
-              purpose: request.purpose,
-              status: request.status,
-              requestedBy: requester?.full_name ?? "Usuário",
-              requestedAt: request.requested_at,
-              reviewedBy: reviewer?.full_name ?? undefined,
-              fulfilledBy: fulfiller?.full_name ?? undefined,
-              reviewNote: request.review_note ?? undefined,
-            } satisfies InventoryRequest;
-          }),
-        } satisfies InventoryItem)),
-        issues: (issueRows ?? []).map((issue) => ({
-          id: issue.id,
-          title: issue.title,
-          description: issue.description,
-          category: issue.category,
-          priority: issue.priority,
-          status: issue.status,
-          taskId: issue.task_id ?? undefined,
-          dueDate: issue.due_date ?? undefined,
-          createdAt: issue.created_at,
-        } satisfies ProjectIssue)),
+        projectTeams: (projectTeamRows ?? []).map(
+          (team) =>
+            ({
+              id: team.id,
+              name: team.name,
+              company: team.company,
+              specialty: team.specialty,
+              contact: team.contact ?? undefined,
+              active: team.active,
+              members: (projectTeamMemberRows ?? [])
+                .filter((member) => member.team_id === team.id)
+                .map((member) => ({
+                  id: member.id,
+                  name: member.name,
+                  role: member.role ?? undefined,
+                  phone: member.phone ?? undefined,
+                  active: member.active,
+                })),
+            }) satisfies ProjectTeam,
+        ),
+        inventory: (inventoryRows ?? []).map(
+          (item) =>
+            ({
+              id: item.id,
+              name: item.name,
+              category: item.category,
+              sku: item.sku ?? undefined,
+              unit: item.unit,
+              quantity: Number(item.current_quantity),
+              minimum: Number(item.minimum_quantity),
+              leadDays: item.lead_days,
+              allocations: (item.inventory_allocations ?? []).map(
+                (allocation) => ({
+                  id: allocation.id,
+                  taskId: allocation.task_id,
+                  planned: Number(allocation.planned_quantity),
+                  consumed: Number(allocation.consumed_quantity),
+                }),
+              ),
+              movements: (movementRows ?? [])
+                .filter((movement) => movement.item_id === item.id)
+                .map((movement) => {
+                  const creator = Array.isArray(movement.creator)
+                    ? movement.creator[0]
+                    : movement.creator;
+                  const updater = Array.isArray(movement.updater)
+                    ? movement.updater[0]
+                    : movement.updater;
+                  return {
+                    id: movement.id,
+                    internalCode: `MOV-${String(movement.movement_number).padStart(6, "0")}`,
+                    type: movement.movement_type,
+                    quantity: Number(movement.quantity),
+                    balanceAfter: Number(movement.balance_after),
+                    taskId: movement.task_id ?? undefined,
+                    purpose: movement.purpose || "Movimentação de estoque",
+                    receiver: movement.receiver_name ?? undefined,
+                    receiverKind: movement.receiver_kind ?? undefined,
+                    receiverId: movement.receiver_id ?? undefined,
+                    document: movement.document_number ?? undefined,
+                    requestId: movement.request_id ?? undefined,
+                    createdBy: creator?.full_name ?? "Usuário",
+                    createdAt: movement.created_at,
+                    updatedBy: updater?.full_name ?? undefined,
+                    updatedAt: movement.updated_at ?? undefined,
+                  };
+                }),
+              requests: (requestRows ?? [])
+                .filter((request) => request.item_id === item.id)
+                .map((request) => {
+                  const requester = Array.isArray(request.profiles)
+                    ? request.profiles[0]
+                    : request.profiles;
+                  const reviewer = Array.isArray(request.reviewer)
+                    ? request.reviewer[0]
+                    : request.reviewer;
+                  const fulfiller = Array.isArray(request.fulfiller)
+                    ? request.fulfiller[0]
+                    : request.fulfiller;
+                  return {
+                    id: request.id,
+                    itemId: request.item_id,
+                    taskId: request.task_id ?? undefined,
+                    quantity: Number(request.quantity),
+                    purpose: request.purpose,
+                    status: request.status,
+                    requestedBy: requester?.full_name ?? "Usuário",
+                    requestedAt: request.requested_at,
+                    reviewedBy: reviewer?.full_name ?? undefined,
+                    fulfilledBy: fulfiller?.full_name ?? undefined,
+                    reviewNote: request.review_note ?? undefined,
+                  } satisfies InventoryRequest;
+                }),
+            }) satisfies InventoryItem,
+        ),
+        issues: (issueRows ?? []).map(
+          (issue) =>
+            ({
+              id: issue.id,
+              title: issue.title,
+              description: issue.description,
+              category: issue.category,
+              priority: issue.priority,
+              status: issue.status,
+              taskId: issue.task_id ?? undefined,
+              dueDate: issue.due_date ?? undefined,
+              createdAt: issue.created_at,
+            }) satisfies ProjectIssue,
+        ),
         reportTemplates: (templateRows ?? []).map((template) => {
           const settings = (template.settings ?? {}) as Record<string, unknown>;
           return {
@@ -564,7 +632,10 @@ export async function transitionRemoteStatusReport(
   if (error) throw error;
 }
 
-export async function saveRemoteReportSummary(reportId: string, summary: string) {
+export async function saveRemoteReportSummary(
+  reportId: string,
+  summary: string,
+) {
   const { error } = await getSupabaseBrowserClient()
     .from("status_reports")
     .update({ executive_summary: summary })
@@ -572,17 +643,26 @@ export async function saveRemoteReportSummary(reportId: string, summary: string)
   if (error) throw error;
 }
 
-export async function generateRemoteReportSummary(payload: Record<string, unknown>) {
+export async function generateRemoteReportSummary(
+  payload: Record<string, unknown>,
+) {
   const { data } = await getSupabaseBrowserClient().auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error("Sessão inválida. Entre novamente.");
   const response = await fetch("/api/report-summary", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(payload),
   });
-  const result = await response.json() as { summary?: string; error?: string };
-  if (!response.ok || !result.summary) throw new Error(result.error ?? "Não foi possível gerar o resumo.");
+  const result = (await response.json()) as {
+    summary?: string;
+    error?: string;
+  };
+  if (!response.ok || !result.summary)
+    throw new Error(result.error ?? "Não foi possível gerar o resumo.");
   return result.summary;
 }
 
@@ -599,7 +679,12 @@ export async function saveRemoteProjectTeam(
     p_specialty: team.specialty,
     p_contact: team.contact ?? null,
     p_active: team.active,
-    p_members: (team.members ?? []).map((member) => ({ name: member.name, role: member.role, phone: member.phone, active: member.active })),
+    p_members: (team.members ?? []).map((member) => ({
+      name: member.name,
+      role: member.role,
+      phone: member.phone,
+      active: member.active,
+    })),
   });
   if (error) throw error;
 }
@@ -703,25 +788,31 @@ export async function updateRemoteInventoryMovement(
   receiverId?: string,
   document?: string,
 ) {
-  const { data, error } = await getSupabaseBrowserClient().rpc("update_inventory_movement", {
-    p_movement_id: movementId,
-    p_type: type,
-    p_quantity: quantity,
-    p_task_id: taskId ?? null,
-    p_purpose: purpose ?? null,
-    p_receiver: receiver ?? null,
-    p_receiver_kind: receiverKind ?? null,
-    p_receiver_id: receiverId ?? null,
-    p_document: document ?? null,
-  });
+  const { data, error } = await getSupabaseBrowserClient().rpc(
+    "update_inventory_movement",
+    {
+      p_movement_id: movementId,
+      p_type: type,
+      p_quantity: quantity,
+      p_task_id: taskId ?? null,
+      p_purpose: purpose ?? null,
+      p_receiver: receiver ?? null,
+      p_receiver_kind: receiverKind ?? null,
+      p_receiver_id: receiverId ?? null,
+      p_document: document ?? null,
+    },
+  );
   if (error) throw error;
   return Number(data);
 }
 
 export async function deleteRemoteInventoryMovement(movementId: string) {
-  const { data, error } = await getSupabaseBrowserClient().rpc("delete_inventory_movement", {
-    p_movement_id: movementId,
-  });
+  const { data, error } = await getSupabaseBrowserClient().rpc(
+    "delete_inventory_movement",
+    {
+      p_movement_id: movementId,
+    },
+  );
   if (error) throw error;
   return Number(data);
 }
@@ -752,32 +843,44 @@ export async function transitionRemoteInventoryRequest(
   receiverId?: string,
   document?: string,
 ) {
-  const { error } = await getSupabaseBrowserClient().rpc("transition_inventory_request", {
-    p_request_id: requestId,
-    p_status: status,
-    p_note: note ?? null,
-    p_receiver: receiver ?? null,
-    p_receiver_kind: receiverKind ?? null,
-    p_receiver_id: receiverId ?? null,
-    p_document: document ?? null,
-  });
+  const { error } = await getSupabaseBrowserClient().rpc(
+    "transition_inventory_request",
+    {
+      p_request_id: requestId,
+      p_status: status,
+      p_note: note ?? null,
+      p_receiver: receiver ?? null,
+      p_receiver_kind: receiverKind ?? null,
+      p_receiver_id: receiverId ?? null,
+      p_document: document ?? null,
+    },
+  );
   if (error) throw error;
 }
 
-export async function importRemoteInventoryItems(projectId: string, rows: InventoryItem[]) {
-  const { data, error } = await getSupabaseBrowserClient().rpc("import_inventory_items", {
-    p_project_id: projectId,
-    p_rows: rows.map((item) => ({
-      name: item.name,
-      category: item.category,
-      sku: item.sku,
-      unit: item.unit,
-      quantity: item.quantity,
-      minimum: item.minimum,
-      leadDays: item.leadDays,
-      allocations: item.allocations.map((allocation) => ({ taskId: allocation.taskId, planned: allocation.planned })),
-    })),
-  });
+export async function importRemoteInventoryItems(
+  projectId: string,
+  rows: InventoryItem[],
+) {
+  const { data, error } = await getSupabaseBrowserClient().rpc(
+    "import_inventory_items",
+    {
+      p_project_id: projectId,
+      p_rows: rows.map((item) => ({
+        name: item.name,
+        category: item.category,
+        sku: item.sku,
+        unit: item.unit,
+        quantity: item.quantity,
+        minimum: item.minimum,
+        leadDays: item.leadDays,
+        allocations: item.allocations.map((allocation) => ({
+          taskId: allocation.taskId,
+          planned: allocation.planned,
+        })),
+      })),
+    },
+  );
   if (error) throw error;
   return Number(data);
 }
@@ -888,6 +991,23 @@ export async function setRemoteProjectArchived(
   if (error) throw error;
 }
 
+export async function saveRemoteBrandLogo(
+  organizationId: string,
+  projectId: string | undefined,
+  file: File | null,
+) {
+  const uploaded = file
+    ? await uploadBrandAsset(organizationId, projectId ?? "organization", file)
+    : null;
+  const rpc = projectId ? "set_project_logo" : "set_organization_logo";
+  const args = projectId
+    ? { p_project_id: projectId, p_logo_path: uploaded?.path ?? null }
+    : { p_logo_path: uploaded?.path ?? null };
+  const { error } = await getSupabaseBrowserClient().rpc(rpc, args);
+  if (error) throw error;
+  return uploaded?.url;
+}
+
 export async function updateRemoteTaskDates(projectId: string, tasks: Task[]) {
   const supabase = getSupabaseBrowserClient();
   const results = await Promise.all(
@@ -915,11 +1035,11 @@ export async function createRemoteTask(
   const supabase = getSupabaseBrowserClient();
   const responsibleId =
     task.responsibleKind === "user"
-      ? task.responsibleRefId ??
+      ? (task.responsibleRefId ??
         members.find(
           (member) => member.name === task.responsible && !member.pending,
         )?.id ??
-        null
+        null)
       : null;
   const { error } = await supabase.from("tasks").insert({
     id: task.id,
@@ -966,11 +1086,11 @@ export async function updateRemoteTask(
   const supabase = getSupabaseBrowserClient();
   const responsibleId =
     task.responsibleKind === "user"
-      ? task.responsibleRefId ??
+      ? (task.responsibleRefId ??
         members.find(
           (member) => member.name === task.responsible && !member.pending,
         )?.id ??
-        null
+        null)
       : null;
   const { error } = await supabase
     .from("tasks")
@@ -1105,17 +1225,20 @@ export async function recordRemoteEntry(
     files,
   );
   const supabase = getSupabaseBrowserClient();
-  const { data: updateId, error } = await supabase.rpc("record_daily_progress", {
-    p_project_id: workspace.project.id,
-    p_task_id: entry.taskId,
-    p_log_date: entry.date,
-    p_title: entry.title,
-    p_description: entry.description,
-    p_progress_delta: entry.progressAdded,
-    p_crew_count: entry.crew,
-    p_weather: entry.weather,
-    p_photos: uploaded,
-  });
+  const { data: updateId, error } = await supabase.rpc(
+    "record_daily_progress",
+    {
+      p_project_id: workspace.project.id,
+      p_task_id: entry.taskId,
+      p_log_date: entry.date,
+      p_title: entry.title,
+      p_description: entry.description,
+      p_progress_delta: entry.progressAdded,
+      p_crew_count: entry.crew,
+      p_weather: entry.weather,
+      p_photos: uploaded,
+    },
+  );
   if (error) {
     await supabase.storage
       .from("worksite-photos")
@@ -1123,13 +1246,15 @@ export async function recordRemoteEntry(
     throw error;
   }
   if (entry.teams?.length && updateId) {
-    const { error: teamError } = await supabase.from("task_update_teams").insert(
-      entry.teams.map((team) => ({
-        update_id: updateId,
-        team_id: team.teamId,
-        worker_count: team.workers,
-      })),
-    );
+    const { error: teamError } = await supabase
+      .from("task_update_teams")
+      .insert(
+        entry.teams.map((team) => ({
+          update_id: updateId,
+          team_id: team.teamId,
+          worker_count: team.workers,
+        })),
+      );
     if (teamError) throw teamError;
   }
 }
@@ -1181,13 +1306,15 @@ export async function updateRemoteEntry(
     .eq("update_id", entry.id);
   if (removeTeamError) throw removeTeamError;
   if (entry.teams?.length) {
-    const { error: teamError } = await supabase.from("task_update_teams").insert(
-      entry.teams.map((team) => ({
-        update_id: entry.id,
-        team_id: team.teamId,
-        worker_count: team.workers,
-      })),
-    );
+    const { error: teamError } = await supabase
+      .from("task_update_teams")
+      .insert(
+        entry.teams.map((team) => ({
+          update_id: entry.id,
+          team_id: team.teamId,
+          worker_count: team.workers,
+        })),
+      );
     if (teamError) throw teamError;
   }
 }

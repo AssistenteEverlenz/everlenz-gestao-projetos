@@ -11,6 +11,7 @@ import {
   OrganizationSetup,
 } from "./auth";
 import { Icon, type IconName } from "./icons";
+import { BrandSymbols } from "./brand";
 import type {
   InventoryItem,
   InventoryMovement,
@@ -40,7 +41,10 @@ import { Photos } from "./views/photos";
 import { Inventory } from "./views/inventory";
 import { Alerts } from "./views/alerts";
 import { Projects } from "./views/projects";
-import { buildAutomaticAttention, type AutomaticAttention } from "./attention-data";
+import {
+  buildAutomaticAttention,
+  type AutomaticAttention,
+} from "./attention-data";
 import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
@@ -78,6 +82,7 @@ import {
   saveRemoteProjectTeam,
   saveRemoteReportTemplate,
   saveRemoteReportSummary,
+  saveRemoteBrandLogo,
   setRemoteProjectArchived,
   generateRemoteReportSummary,
   transitionRemoteStatusReport,
@@ -135,17 +140,20 @@ const titles: Record<
   photos: {
     eyebrow: "EVIDÊNCIAS DA EXECUÇÃO",
     title: "Galeria da obra",
-    description: "Localize, relacione e reúna as evidências fotográficas por EAP.",
+    description:
+      "Localize, relacione e reúna as evidências fotográficas por EAP.",
   },
   inventory: {
     eyebrow: "SUPRIMENTOS E PLANEJAMENTO",
     title: "Estoque da obra",
-    description: "Controle saldos e antecipe reposições conforme a necessidade das EAPs.",
+    description:
+      "Controle saldos e antecipe reposições conforme a necessidade das EAPs.",
   },
   alerts: {
     eyebrow: "GESTÃO PREVENTIVA",
     title: "Central de atenção",
-    description: "Acompanhe riscos de prazo, estoque, relatórios e ocorrências do campo.",
+    description:
+      "Acompanhe riscos de prazo, estoque, relatórios e ocorrências do campo.",
   },
   reports: {
     eyebrow: "COMUNICAÇÃO COM O CLIENTE",
@@ -233,16 +241,27 @@ export function Workspace() {
   const workspace =
     activeWorkspaces.find((item) => item.project.id === projectId) ??
     activeWorkspaces[0];
-  const authenticatedMember = workspace?.members.find(
-    (member) => member.id === (authUser?.id ?? currentUser.id),
-  ) ?? (authUser ? {
-    ...currentUser,
-    id: authUser.id,
-    name: authUser.user_metadata.full_name || authUser.email || "Usuário",
-    email: authUser.email ?? "",
-    initials: String(authUser.user_metadata.full_name || authUser.email || "U").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase(),
-    role: "Usuário" as const,
-  } : currentUser);
+  const authenticatedMember =
+    workspace?.members.find(
+      (member) => member.id === (authUser?.id ?? currentUser.id),
+    ) ??
+    (authUser
+      ? {
+          ...currentUser,
+          id: authUser.id,
+          name: authUser.user_metadata.full_name || authUser.email || "Usuário",
+          email: authUser.email ?? "",
+          initials: String(
+            authUser.user_metadata.full_name || authUser.email || "U",
+          )
+            .split(/\s+/)
+            .map((part) => part[0])
+            .slice(0, 2)
+            .join("")
+            .toUpperCase(),
+          role: "Usuário" as const,
+        }
+      : currentUser);
   const meta = titles[view];
 
   useEffect(() => {
@@ -453,52 +472,33 @@ export function Workspace() {
     }
   }
 
-  function updateTaskProgress(id: string, progress: number) {
+  async function updateTaskProgress(id: string, progress: number) {
     if (!workspace || workspace.tasks.some((task) => task.parentId === id)) {
       setToast(
         "O avanço do item-pai é calculado automaticamente pelos seus subitens.",
       );
       return;
     }
+    if (remoteMode) await updateRemoteTaskProgress(id, progress);
     updateCurrent((current) => ({
       ...current,
       tasks: withRecalculatedProgress(current.tasks, id, progress),
     }));
-    if (remoteMode)
-      void updateRemoteTaskProgress(id, progress).catch((cause) =>
-        setToast(
-          cause instanceof Error
-            ? cause.message
-            : "Falha ao atualizar a atividade.",
-        ),
-      );
+    setToast("Progresso manual atualizado.");
   }
 
-  function addTask(task: Task) {
+  async function addTask(task: Task) {
     if (!workspace) return;
     const normalized = normalizeTaskHierarchy([...workspace.tasks, task]);
     const created = normalized.find((item) => item.id === task.id) ?? task;
     if (remoteMode) {
-      setToast("Salvando atividade no cronograma...");
-      void createRemoteTask(
+      await createRemoteTask(
         workspace.project.id,
         { ...created, code: `tmp-${created.id}` },
         workspace.members,
         workspace.tasks.length,
-      )
-        .then(() => reorderRemoteTasks(workspace.project.id, normalized))
-        .then(() => {
-          updateCurrent((current) => ({ ...current, tasks: normalized }));
-          setToast("Atividade adicionada ao cronograma.");
-        })
-        .catch((cause) =>
-          setToast(
-            cause instanceof Error
-              ? cause.message
-              : "Não foi possível criar a atividade.",
-          ),
-        );
-      return;
+      );
+      await reorderRemoteTasks(workspace.project.id, normalized);
     }
     updateCurrent((current) => ({ ...current, tasks: normalized }));
     setToast("Atividade adicionada ao cronograma.");
@@ -581,7 +581,7 @@ export function Workspace() {
     setToast("Atividade excluída e EAP reorganizada.");
   }
 
-  function addEntry(entry: JournalEntry) {
+  async function addEntry(entry: JournalEntry) {
     if (!workspace) return;
     const applyEntry = () =>
       updateCurrent((current) => ({
@@ -593,24 +593,7 @@ export function Workspace() {
           entry.progressAfter,
         ),
       }));
-    if (remoteMode) {
-      setToast("Enviando fotos e registrando a medição...");
-      void recordRemoteEntry(workspace, entry)
-        .then(() => {
-          applyEntry();
-          setToast(
-            "Registro salvo, evidências vinculadas e cronograma atualizado.",
-          );
-        })
-        .catch((cause) =>
-          setToast(
-            cause instanceof Error
-              ? cause.message
-              : "Não foi possível salvar o diário.",
-          ),
-        );
-      return;
-    }
+    if (remoteMode) await recordRemoteEntry(workspace, entry);
     applyEntry();
     setToast("Registro salvo, evidências vinculadas e cronograma atualizado.");
   }
@@ -678,11 +661,13 @@ export function Workspace() {
 
   function updateMembersInAccount(update: (members: Member[]) => Member[]) {
     const organizationId = workspace?.organizationId;
-    setWorkspaces((current) => current.map((item) =>
-      !organizationId || item.organizationId === organizationId
-        ? { ...item, members: update(item.members) }
-        : item,
-    ));
+    setWorkspaces((current) =>
+      current.map((item) =>
+        !organizationId || item.organizationId === organizationId
+          ? { ...item, members: update(item.members) }
+          : item,
+      ),
+    );
   }
 
   async function inviteMember(member: Member) {
@@ -690,7 +675,11 @@ export function Workspace() {
     const result = remoteMode
       ? await inviteRemoteMember(workspace.project.id, member)
       : { member, temporaryPassword: undefined };
-    updateMembersInAccount((current) => current.some((item) => item.id === result.member.id) ? current : [...current, result.member]);
+    updateMembersInAccount((current) =>
+      current.some((item) => item.id === result.member.id)
+        ? current
+        : [...current, result.member],
+    );
     setToast(
       remoteMode
         ? "Usuário criado e liberado para acessar o Em Dia."
@@ -702,19 +691,28 @@ export function Workspace() {
   async function updateMember(member: Member) {
     if (!workspace) return;
     if (remoteMode) await updateRemoteMember(workspace.project.id, member);
-    updateMembersInAccount((current) => current.map((item) => item.id === member.id ? { ...item, ...member } : item));
+    updateMembersInAccount((current) =>
+      current.map((item) =>
+        item.id === member.id ? { ...item, ...member } : item,
+      ),
+    );
   }
 
   async function resetMemberPassword(member: Member) {
     if (!workspace || !remoteMode) return { temporaryPassword: "" };
-    const result = await resetRemoteMemberPassword(workspace.project.id, member.id);
+    const result = await resetRemoteMemberPassword(
+      workspace.project.id,
+      member.id,
+    );
     return { temporaryPassword: result.senha_provisoria };
   }
 
   async function deleteMember(member: Member) {
     if (!workspace) return;
     if (remoteMode) await deleteRemoteMember(workspace.project.id, member.id);
-    updateMembersInAccount((current) => current.filter((item) => item.id !== member.id));
+    updateMembersInAccount((current) =>
+      current.filter((item) => item.id !== member.id),
+    );
   }
 
   async function saveProjectTeam(team: ProjectTeam) {
@@ -723,14 +721,27 @@ export function Workspace() {
     if (remoteMode) {
       await saveRemoteProjectTeam(workspace.project.id, team);
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, projectTeams: team.id ? (current.projectTeams ?? []).map((item) => item.id === team.id ? persisted : item) : [...(current.projectTeams ?? []), persisted] }));
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        projectTeams: team.id
+          ? (current.projectTeams ?? []).map((item) =>
+              item.id === team.id ? persisted : item,
+            )
+          : [...(current.projectTeams ?? []), persisted],
+      }));
     setToast("Equipe operacional salva.");
   }
 
   async function deleteProjectTeam(team: ProjectTeam) {
     if (!workspace) return;
     if (remoteMode) await deleteRemoteProjectTeam(team.id);
-    updateCurrent((current) => ({ ...current, projectTeams: (current.projectTeams ?? []).filter((item) => item.id !== team.id) }));
+    updateCurrent((current) => ({
+      ...current,
+      projectTeams: (current.projectTeams ?? []).filter(
+        (item) => item.id !== team.id,
+      ),
+    }));
     setToast("Equipe operacional removida.");
   }
 
@@ -740,85 +751,338 @@ export function Workspace() {
     if (remoteMode) {
       await saveRemoteInventoryItem(workspace.project.id, item);
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, inventory: item.id ? (current.inventory ?? []).map((currentItem) => currentItem.id === item.id ? persisted : currentItem) : [...(current.inventory ?? []), persisted] }));
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        inventory: item.id
+          ? (current.inventory ?? []).map((currentItem) =>
+              currentItem.id === item.id ? persisted : currentItem,
+            )
+          : [...(current.inventory ?? []), persisted],
+      }));
     setToast("Material e reservas atualizados.");
   }
 
-  async function moveInventoryItem(itemId: string, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, purpose?: string, receiver?: string, receiverKind?: "user" | "team" | "worker", receiverId?: string, document?: string) {
+  async function moveInventoryItem(
+    itemId: string,
+    type: "entry" | "exit" | "adjustment",
+    quantity: number,
+    taskId?: string,
+    purpose?: string,
+    receiver?: string,
+    receiverKind?: "user" | "team" | "worker",
+    receiverId?: string,
+    document?: string,
+  ) {
     if (!workspace) return;
     if (remoteMode) {
-      await moveRemoteInventory(itemId, type, quantity, taskId, purpose, receiver, receiverKind, receiverId, document);
+      await moveRemoteInventory(
+        itemId,
+        type,
+        quantity,
+        taskId,
+        purpose,
+        receiver,
+        receiverKind,
+        receiverId,
+        document,
+      );
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
-      if (item.id !== itemId) return item;
-      const nextQuantity = type === "entry" ? item.quantity + quantity : type === "exit" ? item.quantity - quantity : quantity;
-      const balance = Math.max(0, nextQuantity);
-      return { ...item, quantity: balance, allocations: type === "exit" && taskId ? item.allocations.map((allocation) => allocation.taskId === taskId ? { ...allocation, consumed: Math.min(allocation.planned, allocation.consumed + quantity) } : allocation) : item.allocations, movements: [{ id: crypto.randomUUID(), internalCode: `MOV-${Date.now()}`, type, quantity, balanceAfter: balance, taskId, purpose: purpose || "Movimentação de estoque", receiver, receiverKind, receiverId, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] };
-    }) }));
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        inventory: (current.inventory ?? []).map((item) => {
+          if (item.id !== itemId) return item;
+          const nextQuantity =
+            type === "entry"
+              ? item.quantity + quantity
+              : type === "exit"
+                ? item.quantity - quantity
+                : quantity;
+          const balance = Math.max(0, nextQuantity);
+          return {
+            ...item,
+            quantity: balance,
+            allocations:
+              type === "exit" && taskId
+                ? item.allocations.map((allocation) =>
+                    allocation.taskId === taskId
+                      ? {
+                          ...allocation,
+                          consumed: Math.min(
+                            allocation.planned,
+                            allocation.consumed + quantity,
+                          ),
+                        }
+                      : allocation,
+                  )
+                : item.allocations,
+            movements: [
+              {
+                id: crypto.randomUUID(),
+                internalCode: `MOV-${Date.now()}`,
+                type,
+                quantity,
+                balanceAfter: balance,
+                taskId,
+                purpose: purpose || "Movimentação de estoque",
+                receiver,
+                receiverKind,
+                receiverId,
+                document,
+                createdBy: currentUser.name,
+                createdAt: new Date().toISOString(),
+              },
+              ...(item.movements ?? []),
+            ],
+          };
+        }),
+      }));
     setToast("Movimentação registrada no estoque.");
   }
 
-  async function updateInventoryMovement(itemId: string, movement: InventoryMovement, type: "entry" | "exit" | "adjustment", quantity: number, taskId?: string, purpose?: string, receiver?: string, receiverKind?: "user" | "team" | "worker", receiverId?: string, document?: string) {
+  async function updateInventoryMovement(
+    itemId: string,
+    movement: InventoryMovement,
+    type: "entry" | "exit" | "adjustment",
+    quantity: number,
+    taskId?: string,
+    purpose?: string,
+    receiver?: string,
+    receiverKind?: "user" | "team" | "worker",
+    receiverId?: string,
+    document?: string,
+  ) {
     if (!workspace) return;
     if (remoteMode) {
-      await updateRemoteInventoryMovement(movement.id, type, quantity, taskId, purpose, receiver, receiverKind, receiverId, document);
+      await updateRemoteInventoryMovement(
+        movement.id,
+        type,
+        quantity,
+        taskId,
+        purpose,
+        receiver,
+        receiverKind,
+        receiverId,
+        document,
+      );
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
-      if (item.id !== itemId) return item;
-      const movements = (item.movements ?? []).map((entry) => entry.id === movement.id ? { ...entry, type, quantity, taskId, purpose: purpose || "Movimentação de estoque", receiver: type === "exit" ? receiver : undefined, receiverKind: type === "exit" ? receiverKind : undefined, receiverId: type === "exit" ? receiverId : undefined, document, updatedBy: currentUser.name, updatedAt: new Date().toISOString() } : entry).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      let balance = 0;
-      const recalculated = movements.map((entry) => { balance = entry.type === "entry" ? balance + entry.quantity : entry.type === "exit" ? balance - entry.quantity : entry.quantity; return { ...entry, balanceAfter: Math.max(0, balance) }; }).reverse();
-      return { ...item, quantity: Math.max(0, balance), movements: recalculated };
-    }) }));
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        inventory: (current.inventory ?? []).map((item) => {
+          if (item.id !== itemId) return item;
+          const movements = (item.movements ?? [])
+            .map((entry) =>
+              entry.id === movement.id
+                ? {
+                    ...entry,
+                    type,
+                    quantity,
+                    taskId,
+                    purpose: purpose || "Movimentação de estoque",
+                    receiver: type === "exit" ? receiver : undefined,
+                    receiverKind: type === "exit" ? receiverKind : undefined,
+                    receiverId: type === "exit" ? receiverId : undefined,
+                    document,
+                    updatedBy: currentUser.name,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : entry,
+            )
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          let balance = 0;
+          const recalculated = movements
+            .map((entry) => {
+              balance =
+                entry.type === "entry"
+                  ? balance + entry.quantity
+                  : entry.type === "exit"
+                    ? balance - entry.quantity
+                    : entry.quantity;
+              return { ...entry, balanceAfter: Math.max(0, balance) };
+            })
+            .reverse();
+          return {
+            ...item,
+            quantity: Math.max(0, balance),
+            movements: recalculated,
+          };
+        }),
+      }));
     setToast("Movimentação atualizada e saldos recalculados.");
   }
 
-  async function deleteInventoryMovement(itemId: string, movement: InventoryMovement) {
+  async function deleteInventoryMovement(
+    itemId: string,
+    movement: InventoryMovement,
+  ) {
     if (!workspace) return;
     if (remoteMode) {
       await deleteRemoteInventoryMovement(movement.id);
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
-      if (item.id !== itemId) return item;
-      let balance = 0;
-      const recalculated = (item.movements ?? []).filter((entry) => entry.id !== movement.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((entry) => { balance = entry.type === "entry" ? balance + entry.quantity : entry.type === "exit" ? balance - entry.quantity : entry.quantity; return { ...entry, balanceAfter: Math.max(0, balance) }; }).reverse();
-      return { ...item, quantity: Math.max(0, balance), movements: recalculated };
-    }) }));
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        inventory: (current.inventory ?? []).map((item) => {
+          if (item.id !== itemId) return item;
+          let balance = 0;
+          const recalculated = (item.movements ?? [])
+            .filter((entry) => entry.id !== movement.id)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            .map((entry) => {
+              balance =
+                entry.type === "entry"
+                  ? balance + entry.quantity
+                  : entry.type === "exit"
+                    ? balance - entry.quantity
+                    : entry.quantity;
+              return { ...entry, balanceAfter: Math.max(0, balance) };
+            })
+            .reverse();
+          return {
+            ...item,
+            quantity: Math.max(0, balance),
+            movements: recalculated,
+          };
+        }),
+      }));
     setToast("Movimentação excluída e saldos recalculados.");
   }
 
-  async function createInventoryRequest(request: Pick<InventoryRequest, "itemId" | "taskId" | "quantity" | "purpose">) {
+  async function createInventoryRequest(
+    request: Pick<
+      InventoryRequest,
+      "itemId" | "taskId" | "quantity" | "purpose"
+    >,
+  ) {
     if (!workspace) return;
     if (remoteMode) {
       await createRemoteInventoryRequest(workspace.project.id, request);
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => item.id === request.itemId ? { ...item, requests: [{ id: crypto.randomUUID(), ...request, status: "pending", requestedBy: currentUser.name, requestedAt: new Date().toISOString() }, ...(item.requests ?? [])] } : item) }));
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        inventory: (current.inventory ?? []).map((item) =>
+          item.id === request.itemId
+            ? {
+                ...item,
+                requests: [
+                  {
+                    id: crypto.randomUUID(),
+                    ...request,
+                    status: "pending",
+                    requestedBy: currentUser.name,
+                    requestedAt: new Date().toISOString(),
+                  },
+                  ...(item.requests ?? []),
+                ],
+              }
+            : item,
+        ),
+      }));
     setToast("Requisição criada. Acompanhe em Estoque > Requisições.");
   }
 
-  async function transitionInventoryRequest(requestId: string, status: InventoryRequest["status"], note?: string, receiver?: string, receiverKind?: "user" | "team" | "worker", receiverId?: string, document?: string) {
+  async function transitionInventoryRequest(
+    requestId: string,
+    status: InventoryRequest["status"],
+    note?: string,
+    receiver?: string,
+    receiverKind?: "user" | "team" | "worker",
+    receiverId?: string,
+    document?: string,
+  ) {
     if (!workspace) return;
     if (remoteMode) {
-      await transitionRemoteInventoryRequest(requestId, status, note, receiver, receiverKind, receiverId, document);
+      await transitionRemoteInventoryRequest(
+        requestId,
+        status,
+        note,
+        receiver,
+        receiverKind,
+        receiverId,
+        document,
+      );
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).map((item) => {
-      const request = (item.requests ?? []).find((entry) => entry.id === requestId);
-      if (!request) return item;
-      const balance = status === "fulfilled" ? Math.max(0, item.quantity - request.quantity) : item.quantity;
-      return { ...item, quantity: balance, requests: (item.requests ?? []).map((entry) => entry.id === requestId ? { ...entry, status, reviewNote: note, reviewedBy: currentUser.name, fulfilledBy: status === "fulfilled" ? currentUser.name : entry.fulfilledBy } : entry), movements: status === "fulfilled" ? [{ id: crypto.randomUUID(), internalCode: `MOV-${Date.now()}`, type: "exit", quantity: request.quantity, balanceAfter: balance, taskId: request.taskId, purpose: request.purpose, receiver, receiverKind, receiverId, document, createdBy: currentUser.name, createdAt: new Date().toISOString() }, ...(item.movements ?? [])] : item.movements };
-    }) }));
-    setToast(status === "fulfilled" ? "Requisição atendida e estoque baixado." : "Requisição atualizada.");
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        inventory: (current.inventory ?? []).map((item) => {
+          const request = (item.requests ?? []).find(
+            (entry) => entry.id === requestId,
+          );
+          if (!request) return item;
+          const balance =
+            status === "fulfilled"
+              ? Math.max(0, item.quantity - request.quantity)
+              : item.quantity;
+          return {
+            ...item,
+            quantity: balance,
+            requests: (item.requests ?? []).map((entry) =>
+              entry.id === requestId
+                ? {
+                    ...entry,
+                    status,
+                    reviewNote: note,
+                    reviewedBy: currentUser.name,
+                    fulfilledBy:
+                      status === "fulfilled"
+                        ? currentUser.name
+                        : entry.fulfilledBy,
+                  }
+                : entry,
+            ),
+            movements:
+              status === "fulfilled"
+                ? [
+                    {
+                      id: crypto.randomUUID(),
+                      internalCode: `MOV-${Date.now()}`,
+                      type: "exit",
+                      quantity: request.quantity,
+                      balanceAfter: balance,
+                      taskId: request.taskId,
+                      purpose: request.purpose,
+                      receiver,
+                      receiverKind,
+                      receiverId,
+                      document,
+                      createdBy: currentUser.name,
+                      createdAt: new Date().toISOString(),
+                    },
+                    ...(item.movements ?? []),
+                  ]
+                : item.movements,
+          };
+        }),
+      }));
+    setToast(
+      status === "fulfilled"
+        ? "Requisição atendida e estoque baixado."
+        : "Requisição atualizada.",
+    );
   }
 
   async function importInventoryItems(items: InventoryItem[]) {
     if (!workspace) return 0;
     if (remoteMode) {
-      const count = await importRemoteInventoryItems(workspace.project.id, items);
+      const count = await importRemoteInventoryItems(
+        workspace.project.id,
+        items,
+      );
       setReloadToken((value) => value + 1);
       setToast(`${count} materiais importados com sucesso.`);
       return count;
     }
-    updateCurrent((current) => ({ ...current, inventory: [...(current.inventory ?? []), ...items.map((item) => ({ ...item, id: crypto.randomUUID() }))] }));
+    updateCurrent((current) => ({
+      ...current,
+      inventory: [
+        ...(current.inventory ?? []),
+        ...items.map((item) => ({ ...item, id: crypto.randomUUID() })),
+      ],
+    }));
     setToast(`${items.length} materiais importados com sucesso.`);
     return items.length;
   }
@@ -826,7 +1090,12 @@ export function Workspace() {
   async function deleteInventoryItem(item: InventoryItem) {
     if (!workspace) return;
     if (remoteMode) await deleteRemoteInventoryItem(item.id);
-    updateCurrent((current) => ({ ...current, inventory: (current.inventory ?? []).filter((currentItem) => currentItem.id !== item.id) }));
+    updateCurrent((current) => ({
+      ...current,
+      inventory: (current.inventory ?? []).filter(
+        (currentItem) => currentItem.id !== item.id,
+      ),
+    }));
     setToast("Material removido do estoque.");
   }
 
@@ -836,8 +1105,20 @@ export function Workspace() {
     if (remoteMode) {
       await saveRemoteIssue(workspace.project.id, issue);
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, issues: issue.id ? (current.issues ?? []).map((item) => item.id === issue.id ? persisted : item) : [persisted, ...(current.issues ?? [])] }));
-    setToast(issue.status === "resolved" ? "Ocorrência resolvida." : "Ponto de atenção registrado.");
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        issues: issue.id
+          ? (current.issues ?? []).map((item) =>
+              item.id === issue.id ? persisted : item,
+            )
+          : [persisted, ...(current.issues ?? [])],
+      }));
+    setToast(
+      issue.status === "resolved"
+        ? "Ocorrência resolvida."
+        : "Ponto de atenção registrado.",
+    );
   }
 
   async function saveReportTemplate(template: ReportTemplate) {
@@ -846,20 +1127,47 @@ export function Workspace() {
     if (remoteMode) {
       await saveRemoteReportTemplate(workspace.project.id, template);
       setReloadToken((value) => value + 1);
-    } else updateCurrent((current) => ({ ...current, reportTemplates: template.id ? (current.reportTemplates ?? []).map((item) => item.id === template.id ? persisted : item) : [...(current.reportTemplates ?? []), persisted] }));
+    } else
+      updateCurrent((current) => ({
+        ...current,
+        reportTemplates: template.id
+          ? (current.reportTemplates ?? []).map((item) =>
+              item.id === template.id ? persisted : item,
+            )
+          : [...(current.reportTemplates ?? []), persisted],
+      }));
     setToast("Modelo de relatório atualizado.");
   }
 
-  async function transitionReport(reportId: string, status: "draft" | "review" | "approved" | "sent", note?: string) {
+  async function transitionReport(
+    reportId: string,
+    status: "draft" | "review" | "approved" | "sent",
+    note?: string,
+  ) {
     if (!workspace) return;
     if (remoteMode) await transitionRemoteStatusReport(reportId, status, note);
-    updateCurrent((current) => ({ ...current, reports: (current.reports ?? []).map((report) => report.id === reportId ? { ...report, status, reviewNote: note } : report) }));
-    setToast(status === "approved" ? "Relatório aprovado e bloqueado." : status === "draft" ? "Relatório devolvido para correção." : "Status do relatório atualizado.");
+    updateCurrent((current) => ({
+      ...current,
+      reports: (current.reports ?? []).map((report) =>
+        report.id === reportId
+          ? { ...report, status, reviewNote: note }
+          : report,
+      ),
+    }));
+    setToast(
+      status === "approved"
+        ? "Relatório aprovado e bloqueado."
+        : status === "draft"
+          ? "Relatório devolvido para correção."
+          : "Status do relatório atualizado.",
+    );
   }
 
   async function generateReportSummary(reportId: string, reportDate: string) {
     if (!workspace) return "";
-    const daily = workspace.entries.filter((entry) => entry.date === reportDate);
+    const daily = workspace.entries.filter(
+      (entry) => entry.date === reportDate,
+    );
     const payload = {
       projectId: workspace.project.id,
       project: workspace.project.name,
@@ -867,15 +1175,34 @@ export function Workspace() {
       overall: metrics.overall,
       entries: daily.map((entry) => {
         const task = workspace.tasks.find((item) => item.id === entry.taskId);
-        return { eap: task?.code ?? "—", activity: task?.name ?? "Atividade", title: entry.title, description: entry.description, progress: entry.progressAdded };
+        return {
+          eap: task?.code ?? "—",
+          activity: task?.name ?? "Atividade",
+          title: entry.title,
+          description: entry.description,
+          progress: entry.progressAdded,
+        };
       }),
-      alerts: (workspace.issues ?? []).filter((issue) => issue.status !== "resolved").map((issue) => ({ title: issue.title, description: issue.description, priority: issue.priority })),
+      alerts: (workspace.issues ?? [])
+        .filter((issue) => issue.status !== "resolved")
+        .map((issue) => ({
+          title: issue.title,
+          description: issue.description,
+          priority: issue.priority,
+        })),
     };
     const summary = remoteMode
       ? await generateRemoteReportSummary(payload)
       : `${workspace.project.name} apresenta avanço físico geral de ${metrics.overall}%. No período, foram registrados ${daily.length} apontamentos de campo em ${new Set(daily.map((entry) => entry.taskId)).size} atividades.`;
     if (remoteMode) await saveRemoteReportSummary(reportId, summary);
-    updateCurrent((current) => ({ ...current, reports: (current.reports ?? []).map((report) => report.id === reportId ? { ...report, executiveSummary: summary } : report) }));
+    updateCurrent((current) => ({
+      ...current,
+      reports: (current.reports ?? []).map((report) =>
+        report.id === reportId
+          ? { ...report, executiveSummary: summary }
+          : report,
+      ),
+    }));
     return summary;
   }
 
@@ -942,9 +1269,11 @@ export function Workspace() {
     setToast("Projeto criado. Comece estruturando o cronograma.");
   }
 
-  async function setProjectArchived(projectIdToChange: string, archived: boolean) {
-    if (remoteMode)
-      await setRemoteProjectArchived(projectIdToChange, archived);
+  async function setProjectArchived(
+    projectIdToChange: string,
+    archived: boolean,
+  ) {
+    if (remoteMode) await setRemoteProjectArchived(projectIdToChange, archived);
     const archivedAt = archived ? new Date().toISOString() : undefined;
     setWorkspaces((current) =>
       current.map((item) =>
@@ -965,6 +1294,48 @@ export function Workspace() {
       archived
         ? "Projeto excluído da operação ativa. Ele pode ser reaberto a qualquer momento."
         : "Projeto reaberto e disponível para a equipe.",
+    );
+  }
+
+  async function saveBrandLogo(
+    scope: "organization" | "project",
+    file: File | null,
+  ) {
+    if (!workspace) return;
+    let logoUrl: string | undefined;
+    if (remoteMode) {
+      if (!workspace.organizationId)
+        throw new Error("Organização não identificada.");
+      logoUrl = await saveRemoteBrandLogo(
+        workspace.organizationId,
+        scope === "project" ? workspace.project.id : undefined,
+        file,
+      );
+    } else if (file) {
+      logoUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () =>
+          reject(new Error("Não foi possível ler a imagem."));
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+    }
+    setWorkspaces((current) =>
+      current.map((item) => {
+        if (scope === "organization")
+          return {
+            ...item,
+            project: { ...item.project, organizationLogoUrl: logoUrl },
+          };
+        return item.project.id === workspace.project.id
+          ? { ...item, project: { ...item.project, logoUrl } }
+          : item;
+      }),
+    );
+    setToast(
+      scope === "organization"
+        ? "Marca da empresa atualizada."
+        : "Logo do projeto atualizada.",
     );
   }
 
@@ -1002,9 +1373,15 @@ export function Workspace() {
       }
     : null;
   const automaticAttention = workspace
-    ? buildAutomaticAttention(workspace.tasks, workspace.inventory ?? [], workspace.reports ?? [])
+    ? buildAutomaticAttention(
+        workspace.tasks,
+        workspace.inventory ?? [],
+        workspace.reports ?? [],
+      )
     : [];
-  const openAttentionIssues = (workspace?.issues ?? []).filter((issue) => issue.status !== "resolved");
+  const openAttentionIssues = (workspace?.issues ?? []).filter(
+    (issue) => issue.status !== "resolved",
+  );
   const attentionCount = automaticAttention.length + openAttentionIssues.length;
 
   if (remoteMode && !authReady) return <LoadingScreen />;
@@ -1047,7 +1424,10 @@ export function Workspace() {
           onClick={() => navigate("overview")}
           aria-label="Ir para visão geral"
         >
-          <img src="/emdia.svg" alt="" />
+          <BrandSymbols
+            organizationLogoUrl={workspace?.project.organizationLogoUrl}
+            projectLogoUrl={workspace?.project.logoUrl}
+          />
           <span>
             <strong>em dia</strong>
             <small>BY EVERLENZ</small>
@@ -1062,15 +1442,24 @@ export function Workspace() {
             workspace ? setProjectMenu((open) => !open) : setProjectModal(true)
           }
         >
-          <span className="project-monogram">
-            {workspace
-              ? workspace.project.name
-                  .split(" ")
-                  .map((word) => word[0])
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase()
-              : "+"}
+          <span
+            className={`project-monogram ${workspace?.project.logoUrl ? "has-logo" : ""}`}
+          >
+            {workspace?.project.logoUrl ? (
+              <img
+                src={workspace.project.logoUrl}
+                alt={`Logo ${workspace.project.client}`}
+              />
+            ) : workspace ? (
+              workspace.project.name
+                .split(" ")
+                .map((word) => word[0])
+                .slice(0, 2)
+                .join("")
+                .toUpperCase()
+            ) : (
+              "+"
+            )}
           </span>
           <span className="project-copy">
             <strong>{workspace?.project.name ?? "Criar projeto"}</strong>
@@ -1146,8 +1535,15 @@ export function Workspace() {
             <Icon name="settings" />
             <span>Configurações</span>
           </button>
-          <button className="user-card" onClick={signOut} disabled={!remoteMode || signingOut} title="Sair do sistema">
-            <span className="avatar avatar-dark">{authenticatedMember.initials}</span>
+          <button
+            className="user-card"
+            onClick={signOut}
+            disabled={!remoteMode || signingOut}
+            title="Sair do sistema"
+          >
+            <span className="avatar avatar-dark">
+              {authenticatedMember.initials}
+            </span>
             <span>
               <strong>{authenticatedMember.name}</strong>
               <small>{authenticatedMember.role}</small>
@@ -1160,7 +1556,10 @@ export function Workspace() {
       <main className="main-area">
         <header className="topbar">
           <div className="mobile-brand">
-            <img src="/emdia.svg" alt="" />
+            <BrandSymbols
+              organizationLogoUrl={workspace?.project.organizationLogoUrl}
+              projectLogoUrl={workspace?.project.logoUrl}
+            />
             <strong>
               em dia <span>BY EVERLENZ</span>
             </strong>
@@ -1184,7 +1583,8 @@ export function Workspace() {
           </div>
           <div className="header-actions">
             <div className="sync-state">
-              <span className={realtimeState} /> {remoteMode
+              <span className={realtimeState} />{" "}
+              {remoteMode
                 ? realtimeState === "updating"
                   ? "Atualizando em tempo real..."
                   : realtimeState === "error"
@@ -1200,15 +1600,26 @@ export function Workspace() {
               <Icon name={dark ? "sun" : "moon"} />
             </button>
             <div className="notification-center">
-              <button className="icon-btn notification" aria-label={`${attentionCount} notificações`} aria-haspopup="true" onClick={() => workspace && navigate("alerts")}>
+              <button
+                className="icon-btn notification"
+                aria-label={`${attentionCount} notificações`}
+                aria-haspopup="true"
+                onClick={() => workspace && navigate("alerts")}
+              >
                 <Icon name="bell" />
-                {attentionCount > 0 && <em className="notification-badge">{attentionCount > 99 ? "99+" : attentionCount}</em>}
+                {attentionCount > 0 && (
+                  <em className="notification-badge">
+                    {attentionCount > 99 ? "99+" : attentionCount}
+                  </em>
+                )}
               </button>
-              {workspace && <NotificationPreview
-                automatic={automaticAttention}
-                issues={openAttentionIssues}
-                onOpen={() => navigate("alerts")}
-              />}
+              {workspace && (
+                <NotificationPreview
+                  automatic={automaticAttention}
+                  issues={openAttentionIssues}
+                  onOpen={() => navigate("alerts")}
+                />
+              )}
             </div>
             <button
               className="avatar avatar-dark desktop-avatar"
@@ -1312,7 +1723,11 @@ export function Workspace() {
             <Team
               {...common}
               currentUserId={authUser?.id ?? currentUser.id}
-              currentUserRole={workspace.members.find((member) => member.id === (authUser?.id ?? currentUser.id))?.role ?? "Usuário"}
+              currentUserRole={
+                workspace.members.find(
+                  (member) => member.id === (authUser?.id ?? currentUser.id),
+                )?.role ?? "Usuário"
+              }
               inviteMember={inviteMember}
               updateMember={updateMember}
               resetMemberPassword={resetMemberPassword}
@@ -1323,27 +1738,52 @@ export function Workspace() {
             />
           )}
           {view === "settings" && (
-            <Settings dark={dark} setDark={chooseTheme} setToast={setToast} />
+            <Settings
+              dark={dark}
+              setDark={chooseTheme}
+              setToast={setToast}
+              project={workspace?.project}
+              canManage={
+                authenticatedMember.role === "Administrador" ||
+                authenticatedMember.role === "Gestor"
+              }
+              saveBrandLogo={saveBrandLogo}
+            />
           )}
         </div>
       </main>
 
       {workspace && (
         <nav className="bottom-nav glass" aria-label="Navegação mobile">
-          {nav.filter((item) => ["overview", "schedule", "journal", "reports"].includes(item.id)).map((item) => (
-            <button
-              key={item.id}
-              data-tour={`nav-${item.id}`}
-              className={view === item.id ? "active" : ""}
-              onClick={() => navigate(item.id)}
-            >
-              <Icon name={item.icon} />
-              <span>{item.short}</span>
-            </button>
-          ))}
+          {nav
+            .filter((item) =>
+              ["overview", "schedule", "journal", "reports"].includes(item.id),
+            )
+            .map((item) => (
+              <button
+                key={item.id}
+                data-tour={`nav-${item.id}`}
+                className={view === item.id ? "active" : ""}
+                onClick={() => navigate(item.id)}
+              >
+                <Icon name={item.icon} />
+                <span>{item.short}</span>
+              </button>
+            ))}
           <button
             data-tour="nav-team"
-            className={["projects", "photos", "inventory", "alerts", "team", "settings"].includes(view) ? "active" : ""}
+            className={
+              [
+                "projects",
+                "photos",
+                "inventory",
+                "alerts",
+                "team",
+                "settings",
+              ].includes(view)
+                ? "active"
+                : ""
+            }
             onClick={() => setMobileMenu(true)}
           >
             <Icon name="more" />
@@ -1352,17 +1792,110 @@ export function Workspace() {
         </nav>
       )}
 
-      {mobileMenu && <Modal title="Mais opções" subtitle={`${authenticatedMember.name} · ${authenticatedMember.role}`} onClose={() => !signingOut && setMobileMenu(false)}>
-        <div className="mobile-more-list">
-          <button onClick={() => { setMobileMenu(false); navigate("projects"); }}><Icon name="building"/><span><strong>Todos os projetos</strong><small>Ativos, concluídos e excluídos</small></span><Icon name="chevron"/></button>
-          <button onClick={() => { setMobileMenu(false); navigate("photos"); }}><Icon name="camera"/><span><strong>Galeria da obra</strong><small>Fotos e relatórios em lote</small></span><Icon name="chevron"/></button>
-          <button onClick={() => { setMobileMenu(false); navigate("inventory"); }}><Icon name="building"/><span><strong>Estoque</strong><small>Materiais e reservas por EAP</small></span><Icon name="chevron"/></button>
-          <button onClick={() => { setMobileMenu(false); navigate("alerts"); }}><Icon name="alert"/><span><strong>Central de atenção</strong><small>{attentionCount} alertas e ocorrências</small></span><Icon name="chevron"/></button>
-          <button onClick={() => { setMobileMenu(false); navigate("team"); }}><Icon name="team"/><span><strong>Equipe</strong><small>Usuários e permissões</small></span><Icon name="chevron"/></button>
-          <button onClick={() => { setMobileMenu(false); navigate("settings"); }}><Icon name="settings"/><span><strong>Configurações</strong><small>Tema, senha e preferências</small></span><Icon name="chevron"/></button>
-          {remoteMode && <button className="logout-option" disabled={signingOut} onClick={signOut}><Icon name="logout"/><span><strong>{signingOut ? "Saindo..." : "Sair do sistema"}</strong><small>Entrar com outro usuário</small></span>{signingOut && <span className="button-spinner"/>}</button>}
-        </div>
-      </Modal>}
+      {mobileMenu && (
+        <Modal
+          title="Mais opções"
+          subtitle={`${authenticatedMember.name} · ${authenticatedMember.role}`}
+          onClose={() => !signingOut && setMobileMenu(false)}
+        >
+          <div className="mobile-more-list">
+            <button
+              onClick={() => {
+                setMobileMenu(false);
+                navigate("projects");
+              }}
+            >
+              <Icon name="building" />
+              <span>
+                <strong>Todos os projetos</strong>
+                <small>Ativos, concluídos e excluídos</small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+            <button
+              onClick={() => {
+                setMobileMenu(false);
+                navigate("photos");
+              }}
+            >
+              <Icon name="camera" />
+              <span>
+                <strong>Galeria da obra</strong>
+                <small>Fotos e relatórios em lote</small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+            <button
+              onClick={() => {
+                setMobileMenu(false);
+                navigate("inventory");
+              }}
+            >
+              <Icon name="building" />
+              <span>
+                <strong>Estoque</strong>
+                <small>Materiais e reservas por EAP</small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+            <button
+              onClick={() => {
+                setMobileMenu(false);
+                navigate("alerts");
+              }}
+            >
+              <Icon name="alert" />
+              <span>
+                <strong>Central de atenção</strong>
+                <small>{attentionCount} alertas e ocorrências</small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+            <button
+              onClick={() => {
+                setMobileMenu(false);
+                navigate("team");
+              }}
+            >
+              <Icon name="team" />
+              <span>
+                <strong>Equipe</strong>
+                <small>Usuários e permissões</small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+            <button
+              onClick={() => {
+                setMobileMenu(false);
+                navigate("settings");
+              }}
+            >
+              <Icon name="settings" />
+              <span>
+                <strong>Configurações</strong>
+                <small>Tema, senha e preferências</small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+            {remoteMode && (
+              <button
+                className="logout-option"
+                disabled={signingOut}
+                onClick={signOut}
+              >
+                <Icon name="logout" />
+                <span>
+                  <strong>
+                    {signingOut ? "Saindo..." : "Sair do sistema"}
+                  </strong>
+                  <small>Entrar com outro usuário</small>
+                </span>
+                {signingOut && <span className="button-spinner" />}
+              </button>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {projectModal && (
         <ProjectModal
@@ -1379,32 +1912,100 @@ export function Workspace() {
         </div>
       )}
       {remoteMode && authUser?.user_metadata.must_change_password === true && (
-        <FirstAccess user={authUser} onComplete={(user) => {
-          setAuthUser(user);
-          setToast("Senha atualizada. Seu acesso está protegido.");
-        }}/>
+        <FirstAccess
+          user={authUser}
+          onComplete={(user) => {
+            setAuthUser(user);
+            setToast("Senha atualizada. Seu acesso está protegido.");
+          }}
+        />
       )}
-      {authUser && <OnboardingTour
-        userId={authUser.id}
-        enabled={authUser.user_metadata.must_change_password !== true}
-        navigate={navigate}
-      />}
+      {authUser && (
+        <OnboardingTour
+          userId={authUser.id}
+          enabled={authUser.user_metadata.must_change_password !== true}
+          navigate={navigate}
+        />
+      )}
     </div>
   );
 }
 
-function NotificationPreview({ automatic, issues, onOpen }: { automatic: AutomaticAttention[]; issues: ProjectIssue[]; onOpen: () => void }) {
+function NotificationPreview({
+  automatic,
+  issues,
+  onOpen,
+}: {
+  automatic: AutomaticAttention[];
+  issues: ProjectIssue[];
+  onOpen: () => void;
+}) {
   const items = [
-    ...automatic.map((item) => ({ id: item.id, kind: item.kind, title: item.title, detail: item.detail, tone: item.tone })),
-    ...issues.map((issue) => ({ id: `issue-${issue.id}`, kind: "Registrado pela equipe", title: issue.title, detail: issue.description, tone: issue.priority })),
+    ...automatic.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      detail: item.detail,
+      tone: item.tone,
+    })),
+    ...issues.map((issue) => ({
+      id: `issue-${issue.id}`,
+      kind: "Registrado pela equipe",
+      title: issue.title,
+      detail: issue.description,
+      tone: issue.priority,
+    })),
   ].slice(0, 6);
   const total = automatic.length + issues.length;
-  return <section className="notification-preview glass" aria-label="Prévia das notificações">
-    <header><div><span>ACOMPANHAMENTO DA OBRA</span><strong>{total ? `${total} ${total === 1 ? "ponto pede" : "pontos pedem"} atenção` : "Tudo em dia por aqui"}</strong></div><Icon name={total ? "bell" : "check"}/></header>
-    <div className="notification-preview-summary"><span><b>{automatic.length}</b> automáticos</span><span><b>{issues.length}</b> registrados pela equipe</span></div>
-    <div className="notification-preview-list">{items.map((item) => <article className={item.tone} key={item.id}><span><Icon name="alert"/></span><div><small>{item.kind}</small><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}{!items.length && <div className="notification-preview-empty"><Icon name="check"/><span>Cronograma, estoque e relatórios estão em ordem.</span></div>}</div>
-    <button onClick={onOpen}>Abrir Central de atenção <Icon name="arrow"/></button>
-  </section>;
+  return (
+    <section
+      className="notification-preview glass"
+      aria-label="Prévia das notificações"
+    >
+      <header>
+        <div>
+          <span>ACOMPANHAMENTO DA OBRA</span>
+          <strong>
+            {total
+              ? `${total} ${total === 1 ? "ponto pede" : "pontos pedem"} atenção`
+              : "Tudo em dia por aqui"}
+          </strong>
+        </div>
+        <Icon name={total ? "bell" : "check"} />
+      </header>
+      <div className="notification-preview-summary">
+        <span>
+          <b>{automatic.length}</b> automáticos
+        </span>
+        <span>
+          <b>{issues.length}</b> registrados pela equipe
+        </span>
+      </div>
+      <div className="notification-preview-list">
+        {items.map((item) => (
+          <article className={item.tone} key={item.id}>
+            <span>
+              <Icon name="alert" />
+            </span>
+            <div>
+              <small>{item.kind}</small>
+              <strong>{item.title}</strong>
+              <p>{item.detail}</p>
+            </div>
+          </article>
+        ))}
+        {!items.length && (
+          <div className="notification-preview-empty">
+            <Icon name="check" />
+            <span>Cronograma, estoque e relatórios estão em ordem.</span>
+          </div>
+        )}
+      </div>
+      <button onClick={onOpen}>
+        Abrir Central de atenção <Icon name="arrow" />
+      </button>
+    </section>
+  );
 }
 
 function EmptyWorkspace({ onCreate }: { onCreate: () => void }) {
@@ -1570,7 +2171,11 @@ function ProjectModal({
             Cancelar
           </button>
           <button className="primary-btn" disabled={saving}>
-            <Icon name="arrow" />{" "}
+            {saving ? (
+              <span className="button-spinner" />
+            ) : (
+              <Icon name="arrow" />
+            )}{" "}
             {saving ? "Criando projeto..." : "Criar e montar cronograma"}
           </button>
         </div>

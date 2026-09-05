@@ -23,6 +23,9 @@ export type Project = {
   contractNumber?: string;
   workDays?: number[];
   archivedAt?: string;
+  logoUrl?: string;
+  organizationName?: string;
+  organizationLogoUrl?: string;
 };
 
 export type TaskResponsibleKind = "user" | "team" | "worker";
