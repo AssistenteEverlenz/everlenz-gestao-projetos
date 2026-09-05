@@ -33,6 +33,7 @@ import {
   workingDuration,
   workingEnd,
   taskWorkingDuration,
+  normalizeWorkingDuration,
 } from "../work-calendar";
 
 type Props = {
@@ -208,6 +209,7 @@ export function Schedule({
   const [showBaseline, setShowBaseline] = useState(true);
   const [filters, setFilters] = useState<GanttFilters>(emptyGanttFilters);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [copyOpen, setCopyOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -237,6 +239,17 @@ export function Schedule({
     startX: number;
     startWidth: number;
   } | null>(null);
+  const eapColumnResize = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+    startPanelWidth: number;
+  } | null>(null);
+  const [eapColumnWidth, setEapColumnWidth] = useState(() => {
+    if (typeof window === "undefined") return 104;
+    const stored = Number(window.localStorage.getItem("emdia-gantt-eap-width"));
+    return stored >= 90 && stored <= 240 ? stored : 104;
+  });
   const taskRowGesture = useRef<{
     taskId: string;
     pointerId: number;
@@ -831,6 +844,45 @@ export function Schedule({
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
   }
+  function resizeEapColumn(nextWidth: number, nextPanelWidth?: number) {
+    const width = Math.round(Math.max(90, Math.min(240, nextWidth)));
+    const panelWidth =
+      nextPanelWidth ?? taskPanelWidth + (width - eapColumnWidth);
+    setEapColumnWidth(width);
+    window.localStorage.setItem("emdia-gantt-eap-width", String(width));
+    resizeTaskPanel(panelWidth);
+  }
+  function beginEapColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    eapColumnResize.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: eapColumnWidth,
+      startPanelWidth: taskPanelWidth,
+    };
+  }
+  function moveEapColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    const resize = eapColumnResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const width = Math.max(
+      90,
+      Math.min(240, resize.startWidth + event.clientX - resize.startX),
+    );
+    resizeEapColumn(
+      width,
+      resize.startPanelWidth + (width - resize.startWidth),
+    );
+  }
+  function endEapColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (eapColumnResize.current?.pointerId !== event.pointerId) return;
+    eapColumnResize.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 
   if (!tasks.length)
     return (
@@ -907,6 +959,22 @@ export function Schedule({
             <Icon name="filter" /> Filtros
             {activeFilterCount > 0 && <b>{activeFilterCount}</b>}
           </button>
+          <button
+            className={`secondary-btn compact gantt-selection-toggle ${selectionMode ? "active" : ""}`}
+            onClick={() => {
+              setSelectionMode((current) => {
+                if (current) {
+                  setSelectedIds(new Set());
+                  setCopyOpen(false);
+                  setBulkDeleteOpen(false);
+                }
+                return !current;
+              });
+            }}
+          >
+            <Icon name="check" />
+            {selectionMode ? "Concluir seleção" : "Selecionar itens"}
+          </button>
         </div>
         <div className="toolbar-group center">
           <label className="switch-label">
@@ -974,7 +1042,7 @@ export function Schedule({
             </button>
           )}
         </div>
-        {selectedIds.size > 0 && (
+        {selectionMode && selectedIds.size > 0 && (
           <div className="gantt-selection-bar">
             <span>
               <b>{selectedIds.size}</b>{" "}
@@ -1096,21 +1164,57 @@ export function Schedule({
         <div
           className="gantt-desktop"
           ref={ganttDesktopRef}
-          style={{ "--gantt-table-width": `${taskPanelWidth}px` } as CSSProperties}
+          style={
+            {
+              "--gantt-table-width": `${taskPanelWidth}px`,
+              "--gantt-eap-width": `${eapColumnWidth}px`,
+            } as CSSProperties
+          }
         >
-          <div className="gantt-task-panel">
+          <div
+            className={`gantt-task-panel ${selectionMode ? "selection-mode" : ""}`}
+          >
             <div className="task-table-head">
               <span className="task-eap-head">
-                <input
-                  type="checkbox"
-                  checked={
-                    visible.length > 0 &&
-                    visible.every((task) => selectedIds.has(task.id))
-                  }
-                  onChange={selectAllVisible}
-                  aria-label="Selecionar todas as atividades visíveis"
-                />
+                {selectionMode && (
+                  <input
+                    type="checkbox"
+                    checked={
+                      visible.length > 0 &&
+                      visible.every((task) => selectedIds.has(task.id))
+                    }
+                    onChange={selectAllVisible}
+                    aria-label="Selecionar todas as atividades visíveis"
+                  />
+                )}
                 EAP
+                <button
+                  type="button"
+                  className="gantt-eap-resizer"
+                  role="separator"
+                  aria-label="Ajustar largura da coluna EAP"
+                  aria-orientation="vertical"
+                  aria-valuemin={90}
+                  aria-valuemax={240}
+                  aria-valuenow={eapColumnWidth}
+                  title="Arraste para ajustar a largura da coluna EAP"
+                  onPointerDown={beginEapColumnResize}
+                  onPointerMove={moveEapColumnResize}
+                  onPointerUp={endEapColumnResize}
+                  onPointerCancel={endEapColumnResize}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key !== "ArrowLeft" &&
+                      event.key !== "ArrowRight"
+                    )
+                      return;
+                    event.preventDefault();
+                    resizeEapColumn(
+                      eapColumnWidth +
+                        (event.key === "ArrowRight" ? 12 : -12),
+                    );
+                  }}
+                />
               </span>
               <span>ATIVIDADE</span>
               <span>DURAÇÃO</span>
@@ -1150,15 +1254,17 @@ export function Schedule({
                     }}
                   >
                     <span className="task-eap-cell">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(task.id)}
-                        onChange={() => toggleTaskSelection(task.id)}
-                        onClick={(event) => event.stopPropagation()}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                        aria-label={`Selecionar ${task.name}`}
-                      />
+                      {selectionMode && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(task.id)}
+                          onChange={() => toggleTaskSelection(task.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          aria-label={`Selecionar ${task.name}`}
+                        />
+                      )}
                       <span
                         className="drag-grip"
                         role="button"
@@ -2452,12 +2558,13 @@ function TaskForm({
     initial?.plannedEnd ?? project.start,
   );
   const [durationWorkDays, setDurationWorkDays] = useState(() =>
-    initial?.durationDays ??
-    workingDuration(
-      initial?.plannedStart ?? project.start,
-      initial?.plannedEnd ?? project.start,
-      workDays,
-    ),
+    initial?.durationDays != null
+      ? normalizeWorkingDuration(initial.durationDays)
+      : workingDuration(
+          initial?.plannedStart ?? project.start,
+          initial?.plannedEnd ?? project.start,
+          workDays,
+        ),
   );
   const [baselineStart, setBaselineStart] = useState(
     initial?.baselineStart ?? project.start,
@@ -2502,7 +2609,7 @@ function TaskForm({
   ) {
     const predecessor = tasks.find((task) => task.id === nextDependencyId);
     if (!predecessor) return;
-    const activityDuration = Math.max(0.01, durationWorkDays);
+    const activityDuration = normalizeWorkingDuration(durationWorkDays);
     if (nextType === "FS" || nextType === "SS") {
       const anchor =
         nextType === "FS"
@@ -2546,7 +2653,9 @@ function TaskForm({
         phase: phase || "Sem etapa",
         plannedStart,
         plannedEnd: effectiveMilestone ? plannedStart : safePlannedEnd,
-        durationDays: effectiveMilestone ? 0.01 : Math.max(0.01, durationWorkDays),
+        durationDays: effectiveMilestone
+          ? 0.25
+          : normalizeWorkingDuration(durationWorkDays),
         baselineStart,
         baselineEnd: effectiveMilestone ? baselineStart : safeBaselineEnd,
         progress: initial?.progress ?? 0,
@@ -2661,7 +2770,6 @@ function TaskForm({
             placeholder="Nome da nova disciplina"
           />
         )}
-        <small>Reutilize uma disciplina existente para manter os filtros consistentes.</small>
       </label>
       <label>
         <span>Item pai</span>
@@ -2722,13 +2830,13 @@ function TaskForm({
         <span>Duração em dias úteis</span>
         <input
           type="number"
-          min="0.01"
+          min="0.25"
           step="0.25"
           required
           disabled={milestone || derivesPeriod}
           value={milestone ? 1 : durationWorkDays}
           onChange={(event) => {
-            const value = Math.max(0.01, Number(event.target.value));
+            const value = normalizeWorkingDuration(Number(event.target.value));
             setDurationWorkDays(value);
             const end = workingEnd(plannedStart, value, workDays);
             setPlannedEnd(end);

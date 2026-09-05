@@ -57,11 +57,14 @@ export function workingEnd(
 }
 
 export function taskWorkingDuration(task: Task, workDays?: number[]) {
-  return Math.max(
-    0.01,
+  return normalizeWorkingDuration(
     task.durationDays ??
       workingDuration(task.plannedStart, task.plannedEnd, workDays),
   );
+}
+
+export function normalizeWorkingDuration(value: number) {
+  return Math.max(0.25, Math.round(value * 4) / 4);
 }
 
 export function workingDuration(
