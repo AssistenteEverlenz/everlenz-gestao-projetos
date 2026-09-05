@@ -1452,3 +1452,69 @@ html[data-theme="dark"] .timeline-row.is-parent { background:color-mix(in srgb,v
   .hero-project-logo { width:44px; height:44px; border-radius:12px; }
   .hero-project-marks>.hero-project-logo.client { left:25px; top:14px; width:35px; height:35px; }
 }
+
+/* Filtros facetados do Gantt com contexto hierárquico. */
+.gantt-filter-button.active { border-color:color-mix(in srgb,var(--accent) 50%,var(--line)); color:var(--accent-dark); background:var(--accent-soft); }
+.gantt-filter-button>b { min-width:20px; height:20px; display:grid; place-items:center; padding:0 5px; border-radius:8px; color:#fff; background:var(--accent); font-size:10px; }
+.gantt-filter-strip { order:3; flex:1 0 100%; min-width:0; display:flex; align-items:center; gap:10px; padding-top:10px; border-top:1px solid var(--line); }
+.gantt-filter-label { flex:0 0 auto; display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; font-weight:800; }
+.gantt-filter-label>svg,.gantt-filter-empty>svg { width:15px; color:var(--accent-dark); }
+.gantt-filter-chips { min-width:0; display:flex; align-items:center; gap:7px; overflow-x:auto; scrollbar-width:none; }
+.gantt-filter-chips::-webkit-scrollbar { display:none; }
+.gantt-filter-chip { flex:0 0 auto; display:inline-flex; align-items:center; gap:7px; min-height:31px; padding:5px 5px 5px 10px; border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line)); border-radius:10px; color:var(--text); background:color-mix(in srgb,var(--accent) 8%,var(--surface-solid)); font-size:11px; font-weight:750; }
+.gantt-filter-chip>button { width:22px; height:22px; display:grid; place-items:center; border:0; border-radius:7px; color:var(--muted); background:transparent; cursor:pointer; }
+.gantt-filter-chip>button:hover { color:var(--red); background:color-mix(in srgb,var(--red) 10%,transparent); }
+.gantt-filter-chip svg { width:12px; }
+.gantt-clear-filters,.gantt-filter-empty { flex:0 0 auto; border:0; color:var(--accent-dark); background:transparent; font-size:11px; font-weight:800; cursor:pointer; }
+.gantt-filter-empty { display:flex; align-items:center; gap:7px; color:var(--muted); }
+
+.gantt-filter-modal { display:grid; gap:16px; padding:20px 22px 22px; }
+.gantt-filter-search { display:grid; gap:7px; }
+.gantt-filter-search>.search-box { width:100%; }
+.gantt-filter-search>.search-box input { border:0; background:transparent; }
+.gantt-filter-section { display:grid; gap:9px; min-width:0; }
+.gantt-filter-section>header>div { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.gantt-filter-section>header strong { font:800 12px var(--font-display); }
+.gantt-filter-section>header small { color:var(--muted); font-size:10px; }
+.gantt-filter-options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+.gantt-filter-options>label { display:grid; grid-template-columns:18px minmax(0,1fr) auto; align-items:center; gap:7px; min-height:43px; padding:8px 10px; border:1px solid var(--line); border-radius:11px; background:var(--surface-soft); cursor:pointer; }
+.gantt-filter-options>label.active { border-color:color-mix(in srgb,var(--accent) 45%,var(--line)); background:var(--accent-soft); }
+.gantt-filter-options input,.gantt-filter-checklist input { width:16px; height:16px; padding:0; accent-color:var(--accent); }
+.gantt-filter-options label>span { display:flex; align-items:center; gap:6px; color:var(--text); font-size:11px; font-weight:750; text-transform:none; letter-spacing:0; }
+.gantt-filter-options label>span>i { width:7px; height:7px; border-radius:50%; }
+.gantt-filter-options label>b { color:var(--muted); font-size:10px; }
+.gantt-filter-columns { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.gantt-filter-section.option-group { padding:12px; border:1px solid var(--line); border-radius:14px; background:var(--surface-soft); }
+.gantt-filter-checklist { max-height:180px; display:grid; gap:4px; overflow-y:auto; padding-right:3px; }
+.gantt-filter-checklist>label { display:grid; grid-template-columns:18px minmax(0,1fr) 16px; align-items:center; gap:8px; min-height:35px; padding:6px 8px; border-radius:9px; cursor:pointer; }
+.gantt-filter-checklist>label:hover,.gantt-filter-checklist>label.active { background:var(--surface-solid); }
+.gantt-filter-checklist label>span { overflow:hidden; color:var(--text); font-size:11px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; text-transform:none; letter-spacing:0; }
+.gantt-filter-checklist label>svg { width:14px; color:var(--accent); opacity:0; }
+.gantt-filter-checklist label.active>svg { opacity:1; }
+.gantt-filter-checklist>small { padding:10px; color:var(--muted); text-align:center; }
+.gantt-filter-dates { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+.gantt-filter-flags { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.gantt-filter-flags>.setting-toggle { min-height:51px; padding:8px 10px; border:1px solid var(--line); border-radius:11px; background:var(--surface-soft); }
+.gantt-filter-flags>.setting-toggle span { text-transform:none; letter-spacing:0; }
+.gantt-filter-flags>.setting-toggle strong { font-size:11px; }
+.gantt-filter-flags>.setting-toggle small { font-size:10px; }
+.gantt-filter-hierarchy-note { display:grid; grid-template-columns:28px 1fr; gap:10px; align-items:center; padding:11px 12px; border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line)); border-radius:12px; background:var(--accent-soft); }
+.gantt-filter-hierarchy-note>svg { width:18px; margin:auto; color:var(--accent-dark); }
+.gantt-filter-hierarchy-note>span { display:grid; gap:2px; }
+.gantt-filter-hierarchy-note strong { font-size:11px; }
+.gantt-filter-hierarchy-note small { color:var(--muted); font-size:10px; line-height:1.4; }
+.gantt-filter-actions>.text-btn { margin-right:auto; }
+
+@media screen and (max-width:767px) {
+  .schedule-toolbar>.toolbar-group:first-child { display:grid; grid-template-columns:minmax(0,1fr) auto; }
+  .schedule-toolbar>.toolbar-group:first-child .primary-btn { width:auto; }
+  .schedule-toolbar .gantt-filter-button { display:inline-flex; min-height:42px; }
+  .gantt-filter-strip { width:calc(100% + 18px); margin:0 -9px; padding:8px 9px 1px; }
+  .gantt-filter-label { display:none; }
+  .gantt-clear-filters { padding:7px; }
+  .gantt-filter-modal { padding:16px; }
+  .gantt-filter-options { grid-template-columns:1fr 1fr; }
+  .gantt-filter-columns,.gantt-filter-flags,.gantt-filter-dates { grid-template-columns:1fr; }
+  .gantt-filter-actions { display:grid; grid-template-columns:1fr 1fr; }
+  .gantt-filter-actions>.text-btn { grid-column:1/-1; justify-self:start; }
+}

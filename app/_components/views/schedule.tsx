@@ -77,6 +77,46 @@ const dependencyLabels: Record<DependencyType, string> = {
   SF: "Início → Término (SF)",
 };
 
+type GanttFilters = {
+  query: string;
+  phases: string[];
+  responsibles: string[];
+  statuses: TaskExecutionStatus[];
+  dateFrom: string;
+  dateTo: string;
+  criticalOnly: boolean;
+  milestonesOnly: boolean;
+  dependenciesOnly: boolean;
+  hideCompleted: boolean;
+};
+
+type FilterChip = {
+  id: string;
+  kind: keyof GanttFilters | "dates";
+  value?: string;
+  label: string;
+};
+
+const emptyGanttFilters: GanttFilters = {
+  query: "",
+  phases: [],
+  responsibles: [],
+  statuses: [],
+  dateFrom: "",
+  dateTo: "",
+  criticalOnly: false,
+  milestonesOnly: false,
+  dependenciesOnly: false,
+  hideCompleted: false,
+};
+
+const filterStatusLabels: Record<TaskExecutionStatus, string> = {
+  waiting: "Não iniciada",
+  active: "Em andamento",
+  late: "Em atraso",
+  done: "Concluída",
+};
+
 type RoutePoint = { x: number; y: number };
 
 function roundedOrthogonalPath(points: RoutePoint[], radius = 4) {
@@ -161,11 +201,8 @@ export function Schedule({
   const [mobileFullGantt, setMobileFullGantt] = useState(false);
   const [showMobileTaskTable, setShowMobileTaskTable] = useState(true);
   const [showBaseline, setShowBaseline] = useState(true);
-  const [filterCritical, setFilterCritical] = useState(false);
-  const [hideCompleted, setHideCompleted] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<"all" | TaskExecutionStatus>(
-    "all",
-  );
+  const [filters, setFilters] = useState<GanttFilters>(emptyGanttFilters);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -214,23 +251,124 @@ export function Schedule({
       ),
     [orderedTasks],
   );
+  const phaseOptions = useMemo(
+    () =>
+      [...new Set(orderedTasks.map((task) => task.phase || "Sem etapa"))].sort(
+        (a, b) => a.localeCompare(b, "pt-BR"),
+      ),
+    [orderedTasks],
+  );
+  const responsibleOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          orderedTasks.map((task) => task.responsible || "Sem responsável"),
+        ),
+      ].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [orderedTasks],
+  );
+  const activeFilterCount =
+    (filters.query ? 1 : 0) +
+    filters.phases.length +
+    filters.responsibles.length +
+    filters.statuses.length +
+    (filters.dateFrom || filters.dateTo ? 1 : 0) +
+    Number(filters.criticalOnly) +
+    Number(filters.milestonesOnly) +
+    Number(filters.dependenciesOnly) +
+    Number(filters.hideCompleted);
+  const makeFilterChip = (
+    id: string,
+    kind: FilterChip["kind"],
+    label: string,
+    value?: string,
+  ): FilterChip => ({ id, kind, label, value });
+  const filterChips: FilterChip[] = [
+    ...(filters.query
+      ? [makeFilterChip("query", "query", `Busca: ${filters.query}`)]
+      : []),
+    ...filters.phases.map((value) =>
+      makeFilterChip(`phase-${value}`, "phases", `Disciplina: ${value}`, value),
+    ),
+    ...filters.responsibles.map((value) =>
+      makeFilterChip(
+        `responsible-${value}`,
+        "responsibles",
+        `Responsável: ${value}`,
+        value,
+      ),
+    ),
+    ...filters.statuses.map((value) =>
+      makeFilterChip(
+        `status-${value}`,
+        "statuses",
+        `Status: ${filterStatusLabels[value]}`,
+        value,
+      ),
+    ),
+    ...(filters.dateFrom || filters.dateTo
+      ? [
+          makeFilterChip(
+            "dates",
+            "dates",
+            `Período: ${filters.dateFrom ? formatDate(filters.dateFrom) : "início"} – ${filters.dateTo ? formatDate(filters.dateTo) : "fim"}`,
+          ),
+        ]
+      : []),
+    ...(filters.criticalOnly
+      ? [makeFilterChip("critical", "criticalOnly", "Caminho crítico")]
+      : []),
+    ...(filters.milestonesOnly
+      ? [makeFilterChip("milestones", "milestonesOnly", "Somente marcos")]
+      : []),
+    ...(filters.dependenciesOnly
+      ? [makeFilterChip("dependencies", "dependenciesOnly", "Com dependências")]
+      : []),
+    ...(filters.hideCompleted
+      ? [makeFilterChip("completed", "hideCompleted", "Ocultar concluídas")]
+      : []),
+  ];
   const visible = useMemo(() => {
-    const matches = orderedTasks
-      .filter((task) => !filterCritical || task.critical)
-      .filter(
-        (task) =>
-          !hideCompleted ||
-          statusFilter === "done" ||
-          taskExecutionStatus(task) !== "done",
+    const normalizedQuery = filters.query.trim().toLocaleLowerCase("pt-BR");
+    const matches = orderedTasks.filter((task) => {
+      const status = taskExecutionStatus(task);
+      const searchable = [
+        task.code,
+        task.name,
+        task.phase,
+        task.responsible,
+        task.notes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("pt-BR");
+      if (normalizedQuery && !searchable.includes(normalizedQuery)) return false;
+      if (filters.phases.length && !filters.phases.includes(task.phase || "Sem etapa"))
+        return false;
+      if (
+        filters.responsibles.length &&
+        !filters.responsibles.includes(task.responsible || "Sem responsável")
       )
-      .filter(
-        (task) =>
-          statusFilter === "all" || taskExecutionStatus(task) === statusFilter,
-      );
+        return false;
+      if (filters.statuses.length && !filters.statuses.includes(status))
+        return false;
+      if (filters.hideCompleted && status === "done") return false;
+      if (filters.dateFrom && task.plannedEnd < filters.dateFrom) return false;
+      if (filters.dateTo && task.plannedStart > filters.dateTo) return false;
+      if (filters.criticalOnly && !task.critical) return false;
+      if (filters.milestonesOnly && !task.milestone) return false;
+      if (
+        filters.dependenciesOnly &&
+        !task.dependencyId &&
+        !orderedTasks.some((item) => item.dependencyId === task.id)
+      )
+        return false;
+      return true;
+    });
     const matchIds = new Set(matches.map((task) => task.id));
     const ancestors = ancestorIds(orderedTasks, matchIds);
     const requiredIds = new Set([...matchIds, ...ancestors]);
-    const filtering = filterCritical || hideCompleted || statusFilter !== "all";
+    const filtering = activeFilterCount > 0;
     return orderedTasks.filter((task) => {
       if (filtering && !requiredIds.has(task.id)) return false;
       let parentId = task.parentId;
@@ -244,7 +382,7 @@ export function Schedule({
       }
       return true;
     });
-  }, [collapsedIds, filterCritical, hideCompleted, orderedTasks, statusFilter]);
+  }, [activeFilterCount, collapsedIds, filters, orderedTasks]);
   const timelineStart = tasks.reduce((value, task) => {
     const earliest =
       task.baselineStart && task.baselineStart < task.plannedStart
@@ -347,6 +485,22 @@ export function Schedule({
       parentId = orderedTasks.find((item) => item.id === parentId)?.parentId;
     }
     return depth;
+  }
+  function clearFilters() {
+    setFilters({ ...emptyGanttFilters });
+  }
+  function removeFilter(kind: string, value?: string) {
+    setFilters((current) => {
+      if (kind === "phases" || kind === "responsibles" || kind === "statuses")
+        return {
+          ...current,
+          [kind]: current[kind].filter((item) => item !== value),
+        };
+      if (kind === "dates")
+        return { ...current, dateFrom: "", dateTo: "" };
+      if (kind === "query") return { ...current, query: "" };
+      return { ...current, [kind]: false };
+    });
   }
   function descendantIds(taskId: string) {
     const found = new Set<string>();
@@ -706,14 +860,15 @@ export function Schedule({
           >
             <Icon name="calendar" /> Dias de trabalho
           </button>
+          <button
+            className={`secondary-btn compact gantt-filter-button ${activeFilterCount ? "active" : ""}`}
+            onClick={() => setFilterOpen(true)}
+          >
+            <Icon name="filter" /> Filtros
+            {activeFilterCount > 0 && <b>{activeFilterCount}</b>}
+          </button>
         </div>
         <div className="toolbar-group center">
-          <button
-            className={filterCritical ? "toggle-chip active" : "toggle-chip"}
-            onClick={() => setFilterCritical((value) => !value)}
-          >
-            <span className="critical-dot" /> Caminho crítico
-          </button>
           <label className="switch-label">
             <input
               type="checkbox"
@@ -749,45 +904,35 @@ export function Schedule({
             +
           </button>
         </div>
-        <div className="gantt-quick-filters">
-          <button
-            className={statusFilter === "all" ? "active" : ""}
-            onClick={() => setStatusFilter("all")}
-          >
-            Todas <b>{orderedTasks.length}</b>
-          </button>
-          <button
-            className={statusFilter === "active" ? "active" : ""}
-            onClick={() => setStatusFilter("active")}
-          >
-            Em andamento <b>{statusCounts.active}</b>
-          </button>
-          <button
-            className={statusFilter === "waiting" ? "active" : ""}
-            onClick={() => setStatusFilter("waiting")}
-          >
-            Não iniciadas <b>{statusCounts.waiting}</b>
-          </button>
-          <button
-            className={statusFilter === "late" ? "active" : ""}
-            onClick={() => setStatusFilter("late")}
-          >
-            Em atraso <b>{statusCounts.late}</b>
-          </button>
-          <button
-            className={statusFilter === "done" ? "active" : ""}
-            onClick={() => setStatusFilter("done")}
-          >
-            Concluídas <b>{statusCounts.done}</b>
-          </button>
-          <label className="switch-label hide-completed">
-            <input
-              type="checkbox"
-              checked={hideCompleted}
-              onChange={(event) => setHideCompleted(event.target.checked)}
-            />
-            <span /> Ocultar concluídas
-          </label>
+        <div className={`gantt-filter-strip ${filterChips.length ? "has-filters" : ""}`}>
+          {filterChips.length ? (
+            <>
+              <span className="gantt-filter-label">
+                <Icon name="filter" /> Filtros aplicados
+              </span>
+              <div className="gantt-filter-chips">
+                {filterChips.map((chip) => (
+                  <span key={chip.id} className="gantt-filter-chip">
+                    {chip.label}
+                    <button
+                      type="button"
+                      onClick={() => removeFilter(chip.kind, chip.value)}
+                      aria-label={`Remover filtro ${chip.label}`}
+                    >
+                      <Icon name="close" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <button className="gantt-clear-filters" onClick={clearFilters}>
+                Limpar todos
+              </button>
+            </>
+          ) : (
+            <button className="gantt-filter-empty" onClick={() => setFilterOpen(true)}>
+              <Icon name="filter" /> Todas as {orderedTasks.length} atividades estão visíveis
+            </button>
+          )}
         </div>
       </section>
 
@@ -1432,6 +1577,23 @@ export function Schedule({
           }}
         />
       )}
+      {filterOpen && (
+        <GanttFilterModal
+          filters={filters}
+          phases={phaseOptions}
+          responsibles={responsibleOptions}
+          statusCounts={statusCounts}
+          onClose={() => setFilterOpen(false)}
+          onApply={(nextFilters) => {
+            setFilters(nextFilters);
+            setFilterOpen(false);
+          }}
+          onClear={() => {
+            clearFilters();
+            setFilterOpen(false);
+          }}
+        />
+      )}
       {calendarOpen && (
         <WorkCalendarModal
           project={project}
@@ -1686,6 +1848,173 @@ export function Schedule({
         />
       )}
     </div>
+  );
+}
+
+function GanttFilterModal({
+  filters,
+  phases,
+  responsibles,
+  statusCounts,
+  onClose,
+  onApply,
+  onClear,
+}: {
+  filters: GanttFilters;
+  phases: string[];
+  responsibles: string[];
+  statusCounts: Record<TaskExecutionStatus, number>;
+  onClose: () => void;
+  onApply: (filters: GanttFilters) => void;
+  onClear: () => void;
+}) {
+  const [draft, setDraft] = useState<GanttFilters>(() => ({
+    ...filters,
+    phases: [...filters.phases],
+    responsibles: [...filters.responsibles],
+    statuses: [...filters.statuses],
+  }));
+  const toggleArrayValue = (
+    field: "phases" | "responsibles" | "statuses",
+    value: string,
+  ) =>
+    setDraft((current) => ({
+      ...current,
+      [field]: current[field].includes(value as never)
+        ? current[field].filter((item) => item !== value)
+        : [...current[field], value],
+    }) as GanttFilters);
+
+  return (
+    <Modal
+      title="Filtrar cronograma"
+      subtitle="Combine critérios; atividades correspondentes mantêm toda a cadeia de pais visível."
+      onClose={onClose}
+      wide
+    >
+      <div className="gantt-filter-modal">
+        <label className="gantt-filter-search">
+          <span>Buscar em qualquer campo</span>
+          <span className="search-box">
+            <Icon name="search" />
+            <input
+              autoFocus
+              value={draft.query}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  query: event.target.value,
+                }))
+              }
+              placeholder="Atividade, EAP, disciplina, responsável ou observação"
+            />
+          </span>
+        </label>
+
+        <section className="gantt-filter-section">
+          <header>
+            <div><strong>Status</strong><small>Selecione um ou mais</small></div>
+          </header>
+          <div className="gantt-filter-options status-options">
+            {(Object.keys(filterStatusLabels) as TaskExecutionStatus[]).map(
+              (status) => (
+                <label key={status} className={draft.statuses.includes(status) ? "active" : ""}>
+                  <input
+                    type="checkbox"
+                    checked={draft.statuses.includes(status)}
+                    onChange={() => toggleArrayValue("statuses", status)}
+                  />
+                  <span><i style={{ background: taskStatusPalette[status].period }} />{filterStatusLabels[status]}</span>
+                  <b>{statusCounts[status]}</b>
+                </label>
+              ),
+            )}
+          </div>
+        </section>
+
+        <div className="gantt-filter-columns">
+          <FilterOptionGroup
+            title="Etapa / disciplina"
+            options={phases}
+            selected={draft.phases}
+            emptyLabel="Nenhuma disciplina cadastrada"
+            onToggle={(value) => toggleArrayValue("phases", value)}
+          />
+          <FilterOptionGroup
+            title="Responsável"
+            options={responsibles}
+            selected={draft.responsibles}
+            emptyLabel="Nenhum responsável cadastrado"
+            onToggle={(value) => toggleArrayValue("responsibles", value)}
+          />
+        </div>
+
+        <section className="gantt-filter-section">
+          <header><div><strong>Período planejado</strong><small>Mostra atividades que cruzam o intervalo</small></div></header>
+          <div className="gantt-filter-dates">
+            <label><span>De</span><input type="date" value={draft.dateFrom} onChange={(event) => setDraft((current) => ({ ...current, dateFrom: event.target.value }))} /></label>
+            <label><span>Até</span><input type="date" min={draft.dateFrom || undefined} value={draft.dateTo} onChange={(event) => setDraft((current) => ({ ...current, dateTo: event.target.value }))} /></label>
+          </div>
+        </section>
+
+        <section className="gantt-filter-section">
+          <header><div><strong>Características</strong><small>Refine por propriedades do planejamento</small></div></header>
+          <div className="gantt-filter-flags">
+            {([
+              ["criticalOnly", "Caminho crítico", "Atividades marcadas como críticas"],
+              ["milestonesOnly", "Somente marcos", "Entregas e decisões de duração zero"],
+              ["dependenciesOnly", "Com dependências", "Predecessoras ou sucessoras vinculadas"],
+              ["hideCompleted", "Ocultar concluídas", "Remove atividades finalizadas"],
+            ] as const).map(([field, label, description]) => (
+              <label key={field} className="setting-toggle">
+                <span><strong>{label}</strong><small>{description}</small></span>
+                <input type="checkbox" checked={draft[field]} onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.checked }))} />
+                <i />
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <div className="gantt-filter-hierarchy-note">
+          <Icon name="info" />
+          <span><strong>Contexto hierárquico preservado</strong><small>Se um neto corresponder ao filtro, o filho e o pai também serão exibidos para manter a leitura da EAP.</small></span>
+        </div>
+        <div className="modal-actions gantt-filter-actions">
+          <button className="text-btn" onClick={onClear}>Limpar filtros</button>
+          <button className="secondary-btn" onClick={onClose}>Cancelar</button>
+          <button className="primary-btn" onClick={() => onApply(draft)}><Icon name="filter" /> Aplicar filtros</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function FilterOptionGroup({
+  title,
+  options,
+  selected,
+  emptyLabel,
+  onToggle,
+}: {
+  title: string;
+  options: string[];
+  selected: string[];
+  emptyLabel: string;
+  onToggle: (value: string) => void;
+}) {
+  return (
+    <section className="gantt-filter-section option-group">
+      <header><div><strong>{title}</strong><small>{selected.length ? `${selected.length} selecionado(s)` : "Todos"}</small></div></header>
+      <div className="gantt-filter-checklist">
+        {options.length ? options.map((option) => (
+          <label key={option} className={selected.includes(option) ? "active" : ""}>
+            <input type="checkbox" checked={selected.includes(option)} onChange={() => onToggle(option)} />
+            <span>{option}</span>
+            <Icon name="check" />
+          </label>
+        )) : <small>{emptyLabel}</small>}
+      </div>
+    </section>
   );
 }
 
