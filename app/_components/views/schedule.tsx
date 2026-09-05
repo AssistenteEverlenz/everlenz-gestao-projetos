@@ -137,6 +137,18 @@ export function Schedule({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
+  const [taskPanelWidth, setTaskPanelWidth] = useState(() => {
+    if (typeof window === "undefined") return 790;
+    const stored = Number(window.localStorage.getItem("emdia-gantt-table-width"));
+    const maximum = Math.max(650, Math.min(1100, window.innerWidth - 300));
+    const preferred =
+      stored >= 650 && stored <= 1100
+        ? stored
+        : window.innerWidth <= 1250
+          ? 700
+          : 790;
+    return Math.min(preferred, maximum);
+  });
   const [editing, setEditing] = useState(false);
   const [historyTask, setHistoryTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
@@ -173,6 +185,11 @@ export function Schedule({
     scrollTop: number;
     pageY: number;
     moved: boolean;
+  } | null>(null);
+  const columnResize = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
   } | null>(null);
   const taskRowGesture = useRef<{
     taskId: string;
@@ -590,6 +607,36 @@ export function Schedule({
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
   }
+  function resizeTaskPanel(nextWidth: number) {
+    const desktopWidth = ganttDesktopRef.current?.clientWidth ?? 1320;
+    const maximum = Math.max(650, Math.min(1100, desktopWidth - 240));
+    const width = Math.round(Math.max(650, Math.min(maximum, nextWidth)));
+    setTaskPanelWidth(width);
+    window.localStorage.setItem("emdia-gantt-table-width", String(width));
+  }
+  function beginColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    columnResize.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: taskPanelWidth,
+    };
+  }
+  function moveColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    const resize = columnResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    resizeTaskPanel(resize.startWidth + event.clientX - resize.startX);
+  }
+  function endColumnResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (columnResize.current?.pointerId !== event.pointerId) return;
+    columnResize.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 
   if (!tasks.length)
     return (
@@ -827,7 +874,11 @@ export function Schedule({
             </strong>
           </div>
         </div>
-        <div className="gantt-desktop" ref={ganttDesktopRef}>
+        <div
+          className="gantt-desktop"
+          ref={ganttDesktopRef}
+          style={{ "--gantt-table-width": `${taskPanelWidth}px` } as CSSProperties}
+        >
           <div className="gantt-task-panel">
             <div className="task-table-head">
               <span>EAP</span>
@@ -955,6 +1006,29 @@ export function Schedule({
               );
             })}
           </div>
+          <button
+            type="button"
+            className="gantt-column-resizer"
+            role="separator"
+            aria-label="Ajustar largura da tabela de atividades"
+            aria-orientation="vertical"
+            aria-valuemin={650}
+            aria-valuemax={1100}
+            aria-valuenow={taskPanelWidth}
+            title="Arraste para aumentar ou diminuir a tabela"
+            onPointerDown={beginColumnResize}
+            onPointerMove={moveColumnResize}
+            onPointerUp={endColumnResize}
+            onPointerCancel={endColumnResize}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              const next = taskPanelWidth + (event.key === "ArrowRight" ? 24 : -24);
+              resizeTaskPanel(next);
+            }}
+          >
+            <span />
+          </button>
           <div
             className="gantt-timeline-scroll"
             ref={timelineScrollRef}
@@ -981,7 +1055,7 @@ export function Schedule({
               <div className="gantt-timeline-body">
                 <svg
                   className="gantt-dependency-layer"
-                  viewBox={`0 0 1000 ${Math.max(44, visible.length * 44)}`}
+                  viewBox={`0 0 1000 ${Math.max(56, visible.length * 56)}`}
                   preserveAspectRatio="none"
                   aria-hidden="true"
                 >
@@ -1027,8 +1101,8 @@ export function Schedule({
                       );
                     const sourceX = dateX(sourceDate, sourceUsesFinish);
                     const targetX = dateX(targetDate, targetUsesFinish);
-                    const sourceY = sourceIndex * 44 + 22;
-                    const targetY = targetIndex * 44 + 22;
+                    const sourceY = sourceIndex * 56 + 28;
+                    const targetY = targetIndex * 56 + 28;
                     const rowDirection = targetY >= sourceY ? 1 : -1;
                     const dependencyIndex =
                       visible

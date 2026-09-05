@@ -782,6 +782,24 @@ html[data-theme="dark"] .brand-symbol,html[data-theme="dark"] .branding-preview 
   .branding-editor .primary-btn { grid-column:1/-1; }
 }
 
+/* Divisor ajustável do Gantt e títulos extensos em múltiplas linhas. */
+.gantt-desktop { position:relative; }
+.gantt-column-resizer { position:absolute; z-index:20; top:0; bottom:0; left:calc(var(--gantt-table-width) - 6px); width:12px; padding:0; border:0; background:transparent; cursor:col-resize; touch-action:none; }
+.gantt-column-resizer>span { position:absolute; top:0; bottom:0; left:5px; width:2px; background:var(--line-strong); transition:width .15s ease,background .15s ease,box-shadow .15s ease; }
+.gantt-column-resizer:hover>span,.gantt-column-resizer:focus-visible>span,.gantt-column-resizer:active>span { width:3px; background:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
+.gantt-task-line,.gantt-task-line .task-row,.timeline-row { height:56px; min-height:56px; max-height:56px; }
+.task-name-cell { gap:2px; }
+.task-name-cell>strong { display:-webkit-box; overflow:hidden; white-space:normal; overflow-wrap:anywhere; line-height:1.15; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; }
+.task-name-cell>small { flex-wrap:nowrap; }
+.timeline-row .gantt-bar { top:18px; }
+.timeline-row .baseline-bar { top:42px; }
+.timeline-row .milestone { top:21px; }
+.timeline-row .gantt-parent-bar { top:26px; }
+
+@media screen and (max-width:767px) {
+  .gantt-column-resizer { display:none; }
+}
+
 /* Operação de campo: assistente, acervo, estoque, alertas e equipes. */
 .journal-wizard-steps { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:4px; }
 .journal-wizard-steps button { position:relative; min-width:0; display:grid; justify-items:center; gap:5px; padding:9px 4px; border:0; border-radius:11px; color:var(--muted); background:var(--surface-soft); font:700 9px var(--font-display); }
