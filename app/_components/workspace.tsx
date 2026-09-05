@@ -30,7 +30,12 @@ import { Modal } from "./ui";
 import { FirstAccess } from "./first-access";
 import { OnboardingTour } from "./onboarding-tour";
 import { normalizeTaskHierarchy } from "./task-structure";
-import { rescheduleTasks, rescheduleTaskSuccessors } from "./work-calendar";
+import {
+  normalizeWorkingDuration,
+  rescheduleTasks,
+  rescheduleTaskSuccessors,
+  workingDuration,
+} from "./work-calendar";
 import { Overview } from "./views/overview";
 import { Schedule } from "./views/schedule";
 import { Journal } from "./views/journal";
@@ -572,6 +577,44 @@ export function Workspace() {
       tasks,
     }));
     setToast("Calendário de trabalho atualizado.");
+  }
+
+  async function refreshSchedule() {
+    if (!workspace) return;
+    const workDays = workspace.project.workDays;
+    const prepared = workspace.tasks.map((task) => {
+      const hasChildren = workspace.tasks.some(
+        (child) => child.parentId === task.id,
+      );
+      if (hasChildren) return task;
+      return {
+        ...task,
+        durationDays: normalizeWorkingDuration(
+          task.durationDays ??
+            workingDuration(task.plannedStart, task.plannedEnd, workDays),
+        ),
+      };
+    });
+    let tasks = normalizeTaskHierarchy(
+      rescheduleTasks(prepared, workDays, workDays ?? [1, 2, 3, 4, 5]),
+    );
+    const predecessorIds = [
+      ...new Set(
+        tasks
+          .map((task) => task.dependencyId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    predecessorIds.forEach((predecessorId) => {
+      tasks = rescheduleTaskSuccessors(tasks, predecessorId, workDays);
+    });
+    tasks = normalizeTaskHierarchy(tasks);
+    if (remoteMode)
+      await updateRemoteTaskDates(workspace.project.id, tasks);
+    updateCurrent((current) => ({ ...current, tasks }));
+    setToast(
+      "Cronograma recalculado: durações, dependências e períodos dos itens-pai foram atualizados.",
+    );
   }
 
   async function deleteTask(taskId: string) {
@@ -1761,6 +1804,7 @@ export function Workspace() {
               reorderTasks={reorderTasks}
               updateTaskProgress={updateTaskProgress}
               updateProjectWorkDays={updateProjectWorkDays}
+              refreshSchedule={refreshSchedule}
               setToast={setToast}
             />
           )}

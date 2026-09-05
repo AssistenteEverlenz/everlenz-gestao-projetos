@@ -54,6 +54,7 @@ type Props = {
   reorderTasks: (tasks: Task[]) => Promise<void>;
   updateTaskProgress: (id: string, progress: number) => Promise<void>;
   updateProjectWorkDays: (workDays: number[]) => Promise<void>;
+  refreshSchedule: () => Promise<void>;
   setToast: (value: string) => void;
 };
 
@@ -171,6 +172,7 @@ export function Schedule({
   reorderTasks,
   updateTaskProgress,
   updateProjectWorkDays,
+  refreshSchedule,
   setToast,
 }: Props) {
   const [selected, setSelected] = useState<Task | null>(() => {
@@ -209,6 +211,8 @@ export function Schedule({
   const [showBaseline, setShowBaseline] = useState(true);
   const [filters, setFilters] = useState<GanttFilters>(emptyGanttFilters);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [refreshingSchedule, setRefreshingSchedule] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [copyOpen, setCopyOpen] = useState(false);
@@ -541,6 +545,22 @@ export function Schedule({
   }
   function clearFilters() {
     setFilters({ ...emptyGanttFilters });
+  }
+  async function runScheduleRefresh() {
+    if (refreshingSchedule) return;
+    setRefreshingSchedule(true);
+    try {
+      await refreshSchedule();
+      setMobileActionsOpen(false);
+    } catch (cause) {
+      setToast(
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível recalcular o cronograma.",
+      );
+    } finally {
+      setRefreshingSchedule(false);
+    }
   }
   function removeFilter(kind: string, value?: string) {
     setFilters((current) => {
@@ -951,6 +971,19 @@ export function Schedule({
             onClick={() => setCalendarOpen(true)}
           >
             <Icon name="calendar" /> Dias de trabalho
+          </button>
+          <button
+            className="secondary-btn compact gantt-refresh-button"
+            disabled={refreshingSchedule}
+            onClick={() => void runScheduleRefresh()}
+            title="Recalcular durações, dependências e períodos dos itens-pai"
+          >
+            {refreshingSchedule ? (
+              <span className="button-spinner" />
+            ) : (
+              <Icon name="refresh" />
+            )}
+            {refreshingSchedule ? "Recalculando..." : "Atualizar gráfico"}
           </button>
           <button
             className={`secondary-btn compact gantt-filter-button ${activeFilterCount ? "active" : ""}`}
@@ -1699,9 +1732,13 @@ export function Schedule({
                   }, 0);
                 }}
                 key={task.id}
-                className={`gantt-mobile-card status-${status} ${depth ? "is-child" : ""} ${childCount ? "is-parent" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
+                className={`gantt-mobile-card status-${status} ${depth ? "is-child" : ""} ${childCount ? "is-parent" : ""} ${selectionMode ? "selection-active" : ""} ${selectedIds.has(task.id) ? "is-selected" : ""} ${collapsedIds.has(task.id) ? "is-collapsed" : ""} ${draggingId === task.id ? "is-dragging" : ""} ${dropIntent?.targetId === task.id ? (dropIntent.asChild ? "drop-as-child" : "drop-as-root") : ""}`}
                 style={{ "--task-depth": depth } as CSSProperties}
-                onClick={(event) => openTaskFromTable(event, task)}
+                onClick={(event) =>
+                  selectionMode
+                    ? toggleTaskSelection(task.id)
+                    : openTaskFromTable(event, task)
+                }
               >
                 <span
                   className="drag-grip"
@@ -1713,6 +1750,15 @@ export function Schedule({
                 >
                   ••
                 </span>
+                {selectionMode && (
+                  <span
+                    className="mobile-task-checkbox"
+                    role="checkbox"
+                    aria-checked={selectedIds.has(task.id)}
+                  >
+                    {selectedIds.has(task.id) && <Icon name="check" />}
+                  </span>
+                )}
                 <span
                   className="mobile-task-color"
                   style={{ background: palette.period }}
@@ -1834,6 +1880,92 @@ export function Schedule({
           </span>
         </footer>
       </section>
+
+      <div className={`mobile-gantt-actions ${mobileActionsOpen ? "open" : ""}`}>
+        {mobileActionsOpen && (
+          <div className="mobile-gantt-actions-menu glass">
+            <button
+              onClick={() => {
+                setCreating(true);
+                setMobileActionsOpen(false);
+              }}
+            >
+              <Icon name="plus" /> Nova atividade
+            </button>
+            <button
+              onClick={() => {
+                setCalendarOpen(true);
+                setMobileActionsOpen(false);
+              }}
+            >
+              <Icon name="calendar" /> Dias de trabalho
+            </button>
+            <button
+              disabled={refreshingSchedule}
+              onClick={() => void runScheduleRefresh()}
+            >
+              {refreshingSchedule ? (
+                <span className="button-spinner" />
+              ) : (
+                <Icon name="refresh" />
+              )}
+              {refreshingSchedule ? "Recalculando..." : "Atualizar gráfico"}
+            </button>
+            <button
+              onClick={() => {
+                setFilterOpen(true);
+                setMobileActionsOpen(false);
+              }}
+            >
+              <Icon name="filter" /> Filtros
+              {activeFilterCount > 0 && <b>{activeFilterCount}</b>}
+            </button>
+            <button
+              className={selectionMode ? "active" : ""}
+              onClick={() => {
+                setSelectionMode((current) => {
+                  if (current) setSelectedIds(new Set());
+                  return !current;
+                });
+                setMobileActionsOpen(false);
+              }}
+            >
+              <Icon name="check" />
+              {selectionMode ? "Concluir seleção" : "Selecionar itens"}
+            </button>
+            {selectionMode && selectedIds.size > 0 && (
+              <>
+                <button
+                  disabled={selectedIds.size !== 1}
+                  onClick={() => {
+                    setCopyOpen(true);
+                    setMobileActionsOpen(false);
+                  }}
+                >
+                  <Icon name="copy" /> Copiar estrutura
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => {
+                    setBulkDeleteOpen(true);
+                    setMobileActionsOpen(false);
+                  }}
+                >
+                  <Icon name="trash" /> Excluir seleção
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        <button
+          className="mobile-gantt-fab"
+          onClick={() => setMobileActionsOpen((current) => !current)}
+          aria-label={mobileActionsOpen ? "Fechar ações do Gantt" : "Abrir ações do Gantt"}
+          aria-expanded={mobileActionsOpen}
+        >
+          <Icon name={mobileActionsOpen ? "close" : "plus"} />
+        </button>
+      </div>
 
       {creating && (
         <TaskForm
