@@ -278,6 +278,44 @@ export function Schedule({
   } | null>(null);
   const suppressTaskClick = useRef(false);
   const ganttDesktopRef = useRef<HTMLDivElement | null>(null);
+  // Horizontal overflow containers prevent CSS sticky from following page scroll.
+  // Move the original headers together, retaining their controls and column widths.
+  useEffect(() => {
+    const desktop = ganttDesktopRef.current;
+    if (!desktop) return;
+    const panel = desktop.querySelector<HTMLElement>(".gantt-task-panel");
+    const canvas = desktop.querySelector<HTMLElement>(".gantt-timeline-canvas");
+    const toolbar = desktop.closest(".schedule-view")?.querySelector<HTMLElement>(".schedule-toolbar");
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const desktopRect = desktop.getBoundingClientRect();
+      const toolbarRect = toolbar?.getBoundingClientRect();
+      const stickyToolbar = toolbar && getComputedStyle(toolbar).position === "sticky";
+      const top = Math.max(0, desktopRect.top, stickyToolbar && toolbarRect ? toolbarRect.bottom : 0);
+      const headerHeight = canvas.querySelector<HTMLElement>(".timeline-head")?.offsetHeight ?? 40;
+      const offset = Math.max(0, Math.min(top - rect.top, rect.height - headerHeight));
+      desktop.style.setProperty("--gantt-header-offset", `${offset}px`);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    const observer = new ResizeObserver(schedule);
+    observer.observe(desktop);
+    if (panel) observer.observe(panel);
+    if (canvas) observer.observe(canvas);
+    if (toolbar) observer.observe(toolbar);
+    window.addEventListener("scroll", schedule, true);
+    window.addEventListener("resize", schedule);
+    schedule();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+      desktop.style.removeProperty("--gantt-header-offset");
+    };
+  });
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
   const timelinePan = useRef<{
     pointerId: number;

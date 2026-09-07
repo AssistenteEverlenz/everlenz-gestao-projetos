@@ -1245,6 +1245,12 @@ html[data-theme="dark"] .gantt-row.is-parent .timeline-row { background:color-mi
   background:var(--surface-solid);
 }
 .task-table-head { height:40px; }
+.gantt-desktop .task-table-head,.gantt-desktop .timeline-head {
+  transform:translateY(var(--gantt-header-offset,0px));
+  z-index:20;
+  background:var(--surface-solid);
+  box-shadow:0 1px 0 var(--line-strong);
+}
 .task-table-head>span,.task-row>span {
   min-width:0;
   height:100%;
