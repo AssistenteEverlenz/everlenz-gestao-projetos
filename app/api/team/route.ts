@@ -86,10 +86,11 @@ export async function POST(request: Request) {
     if (projectsError) throw new ApiError(`Erro ao consultar os projetos: ${projectsError.message}`, 500);
     const { data: duplicate } = await context.admin.from("project_members").select("user_id").eq("project_id", projectId).eq("user_id", authUser.id).maybeSingle();
     if (duplicate) throw new ApiError("Este usuário já faz parte da conta.", 409);
-    const { error: membershipError } = await context.admin.from("project_members").upsert((projects ?? []).map((project) => ({ project_id: project.id, user_id: authUser!.id, role, accepted_at: new Date().toISOString() })), { onConflict: "project_id,user_id" });
+    const grantedProjects = role === "engineer" ? [{ id: projectId }] : (projects ?? []);
+    const { error: membershipError } = await context.admin.from("project_members").insert({ project_id: projectId, user_id: authUser.id, role, accepted_at: new Date().toISOString() });
     if (membershipError) throw new ApiError(`Erro ao liberar os projetos: ${membershipError.message}`, 500);
     createdId = null;
-    return NextResponse.json({ member: { id: authUser.id, name, email, role, initials: initials(name), color: "#54756a", online: false }, senha_provisoria: temporaryPassword, projetos_liberados: projects?.length ?? 0 });
+    return NextResponse.json({ member: { id: authUser.id, name, email, role, initials: initials(name), color: "#54756a", online: false }, senha_provisoria: temporaryPassword, projetos_liberados: grantedProjects.length });
   } catch (cause) {
     if (createdId && serviceRoleKey) {
       const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
@@ -129,7 +130,9 @@ export async function PATCH(request: Request) {
     const { data: projects } = await context.admin.from("projects").select("id").eq("organization_id", context.project.organization_id);
     const ids = (projects ?? []).map((project) => project.id);
     if (ids.length) {
-      const { error: roleError } = await context.admin.from("project_members").update({ role }).eq("user_id", userId).in("project_id", ids);
+      const { error: roleError } = role === "engineer"
+        ? await context.admin.from("project_members").update({ role }).eq("user_id", userId).in("project_id", ids)
+        : await context.admin.from("project_members").update({ role }).eq("user_id", userId).eq("project_id", projectId);
       if (roleError) throw new ApiError(`Erro ao atualizar as permissões: ${roleError.message}`, 500);
     }
     return NextResponse.json({ member: { id: userId, name, email: target.email ?? "", role, initials: initials(name), color: "#54756a", online: false } });
@@ -145,6 +148,11 @@ export async function DELETE(request: Request) {
     const context = await authorize(request, projectId);
     if (userId === context.requester.id) throw new ApiError("Você não pode excluir o próprio acesso.", 409);
     await ensureCanManageTarget(context.admin, context.requesterRole, projectId, userId);
+    if (await targetRole(context.admin, projectId, userId) === "engineer") {
+      const { error } = await context.admin.from("project_members").delete().eq("project_id", projectId).eq("user_id", userId);
+      if (error) throw new ApiError(`Erro ao remover acesso ao projeto: ${error.message}`, 500);
+      return NextResponse.json({ deleted: true });
+    }
     const { data: owned } = await context.admin.from("projects").select("id").eq("organization_id", context.project.organization_id).eq("created_by", userId).limit(1);
     if (owned?.length) throw new ApiError("O proprietário da conta não pode ser excluído.", 409);
     const { error } = await context.admin.auth.admin.deleteUser(userId);

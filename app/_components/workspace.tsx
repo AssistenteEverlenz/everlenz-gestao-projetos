@@ -473,10 +473,18 @@ export function Workspace() {
   async function signOut() {
     if (!remoteMode || signingOut) return;
     setSigningOut(true);
-    const { error } = await getSupabaseBrowserClient().auth.signOut();
-    if (error) {
+    try {
+      const { error } = await getSupabaseBrowserClient().auth.signOut({ scope: "local" });
+      if (error) throw error;
+      setAuthUser(null);
+      setWorkspaces([]);
+      setProjectId(null);
+      setMobileMenu(false);
+      setProjectMenu(false);
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "Não foi possível sair. Tente novamente.");
+    } finally {
       setSigningOut(false);
-      setToast(error.message);
     }
   }
 
@@ -806,11 +814,11 @@ export function Workspace() {
     setToast("Diário excluído e avanço da atividade recalculado.");
   }
 
-  function updateMembersInAccount(update: (members: Member[]) => Member[]) {
+  function updateMembersInAccount(update: (members: Member[]) => Member[], projectOnly = false) {
     const organizationId = workspace?.organizationId;
     setWorkspaces((current) =>
       current.map((item) =>
-        !organizationId || item.organizationId === organizationId
+        (projectOnly ? item.project.id === workspace?.project.id : !organizationId || item.organizationId === organizationId)
           ? { ...item, members: update(item.members) }
           : item,
       ),
@@ -826,6 +834,7 @@ export function Workspace() {
       current.some((item) => item.id === result.member.id)
         ? current
         : [...current, result.member],
+      result.member.role !== "Administrador" && result.member.role !== "Gestor",
     );
     setToast(
       remoteMode
@@ -838,6 +847,7 @@ export function Workspace() {
   async function updateMember(member: Member) {
     if (!workspace) return;
     if (remoteMode) await updateRemoteMember(workspace.project.id, member);
+    if (remoteMode) { setReloadToken((value) => value + 1); return; }
     updateMembersInAccount((current) =>
       current.map((item) =>
         item.id === member.id ? { ...item, ...member } : item,
@@ -859,6 +869,7 @@ export function Workspace() {
     if (remoteMode) await deleteRemoteMember(workspace.project.id, member.id);
     updateMembersInAccount((current) =>
       current.filter((item) => item.id !== member.id),
+      member.role !== "Administrador" && member.role !== "Gestor",
     );
   }
 
@@ -1713,6 +1724,8 @@ export function Workspace() {
           </button>
           <button
             className="user-card"
+            type="button"
+            aria-label={signingOut ? "Saindo do sistema" : "Sair do sistema"}
             onClick={signOut}
             disabled={!remoteMode || signingOut}
             title="Sair do sistema"
@@ -1724,7 +1737,7 @@ export function Workspace() {
               <strong>{authenticatedMember.name}</strong>
               <small>{authenticatedMember.role}</small>
             </span>
-            <Icon name="logout" />
+            {signingOut ? <span className="button-spinner" /> : <Icon name="logout" />}
           </button>
         </div>
       </aside>
