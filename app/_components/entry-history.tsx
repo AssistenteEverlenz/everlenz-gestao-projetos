@@ -1,4 +1,5 @@
 "use client";
+import { SearchableSelect } from "./searchable-select";
 /* eslint-disable @next/next/no-img-element -- evidências privadas com URL assinada */
 
 import { useState } from "react";
@@ -314,7 +315,7 @@ function EntryEditForm({
         </label>
         <label>
           <span>Tempo</span>
-          <select
+          <SearchableSelect
             value={weather}
             onChange={(event) => setWeather(event.target.value)}
           >
@@ -324,7 +325,7 @@ function EntryEditForm({
             <option>Nublado</option>
             <option>Chuva leve</option>
             <option>Chuva intensa</option>
-          </select>
+          </SearchableSelect>
         </label>
       </div>
       <label className="photo-drop compact-photo-drop">

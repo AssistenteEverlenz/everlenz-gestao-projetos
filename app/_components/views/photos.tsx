@@ -1,4 +1,5 @@
 "use client";
+import { SearchableSelect } from "../searchable-select";
 /* eslint-disable @next/next/no-img-element -- evidências privadas da obra */
 
 import { useMemo, useState } from "react";
@@ -51,7 +52,7 @@ export function Photos({ project, tasks, entries, editEntry, deleteEntry, naviga
       <div><span className="overline">ACERVO VISUAL</span><h2>{entries.reduce((sum, entry) => sum + entry.photos.length, 0)} evidências da obra</h2><p>As imagens permanecem vinculadas ao diário e à atividade que originou o avanço.</p></div>
       <div className="photo-library-filters">
         <label className="search-box"><Icon name="search"/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar foto ou atividade..."/></label>
-        <select value={eap} onChange={(event) => setEap(event.target.value)}><option value="all">Todas as EAPs</option>{eaps.map((task) => <option key={task.code} value={task.code}>EAP {task.code} · {task.name}</option>)}</select>
+        <SearchableSelect value={eap} onChange={(event) => setEap(event.target.value)}><option value="all">Todas as EAPs</option>{eaps.map((task) => <option key={task.code} value={task.code}>EAP {task.code} · {task.name}</option>)}</SearchableSelect>
         <button className="primary-btn" disabled={!selected.size} onClick={() => setBatchOpen(true)}><Icon name="report"/> Relatório em lote ({selected.size})</button>
       </div>
     </section>

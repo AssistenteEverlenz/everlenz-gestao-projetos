@@ -230,6 +230,7 @@ export function Workspace() {
   const [remoteError, setRemoteError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
   const [projectMenu, setProjectMenu] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
   const [projectModal, setProjectModal] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
@@ -1644,7 +1645,9 @@ export function Workspace() {
         </button>
         {projectMenu && workspace && (
           <div className="project-switcher glass">
-            {activeWorkspaces.map((option) => (
+            <input aria-label="Buscar projeto ou cliente" placeholder="Buscar projeto ou cliente..." value={projectSearch} onChange={(event) => setProjectSearch(event.target.value)} />
+            {!activeWorkspaces.some((option) => `${option.project.name} ${option.project.client}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(projectSearch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim())) && <p role="status">Nenhum projeto encontrado.</p>}
+            {activeWorkspaces.filter((option) => `${option.project.name} ${option.project.client}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(projectSearch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim())).map((option) => (
               <button
                 key={option.project.id}
                 className={

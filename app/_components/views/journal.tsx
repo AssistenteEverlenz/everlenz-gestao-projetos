@@ -1,4 +1,5 @@
 "use client";
+import { SearchableSelect } from "../searchable-select";
 /* eslint-disable @next/next/no-img-element -- evidências privadas do Diário de Obra */
 
 import { useMemo, useState } from "react";
@@ -776,7 +777,7 @@ function JournalForm({
           className={`full activity-selector wizard-panel ${step === 1 ? "active" : ""}`}
         >
           <span>1 · Atividade do cronograma</span>
-          <select
+          <SearchableSelect
             value={taskId}
             onChange={(event) => changeTask(event.target.value)}
           >
@@ -785,7 +786,7 @@ function JournalForm({
                 {item.code} · {item.name} ({item.progress}%)
               </option>
             ))}
-          </select>
+          </SearchableSelect>
           <small>
             {task.responsible || "Sem responsável"} · {task.phase}
           </small>
@@ -933,7 +934,7 @@ function JournalForm({
         )}
         <label className={`wizard-panel ${step === 2 ? "active" : ""}`}>
           <span>Condição do tempo</span>
-          <select
+          <SearchableSelect
             value={weather}
             onChange={(event) => setWeather(event.target.value)}
           >
@@ -943,7 +944,7 @@ function JournalForm({
             <option>Nublado</option>
             <option>Chuva leve</option>
             <option>Chuva intensa</option>
-          </select>
+          </SearchableSelect>
         </label>
         <label
           className={`photo-drop full wizard-panel ${step === 3 ? "active" : ""}`}

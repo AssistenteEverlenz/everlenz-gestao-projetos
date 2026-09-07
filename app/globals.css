@@ -1,3 +1,14 @@
+.searchable-select { position:relative; min-width:0; width:100%; }
+.searchable-select .searchable-select-native { position:absolute; width:1px; height:1px; padding:0; opacity:0; pointer-events:none; }
+.searchable-select > input { width:100%; min-width:0; padding-right:30px; text-overflow:ellipsis; }
+.searchable-select-chevron { position:absolute; right:12px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--muted); }
+.searchable-select-popup { position:fixed; z-index:10000; overflow:auto; overscroll-behavior:contain; border:1px solid var(--line-strong); border-radius:12px; padding:5px; background:var(--surface-solid); color:var(--text); box-shadow:0 12px 35px #0003; font-size:12px; }
+.searchable-select-option { padding:10px 12px; border-radius:7px; cursor:pointer; white-space:normal; overflow-wrap:anywhere; line-height:1.5; }
+.searchable-select-option[data-active="true"],.searchable-select-option:hover { background:color-mix(in srgb,#185785 16%,var(--surface-solid)); }
+.searchable-select-option[aria-selected="true"] { font-weight:700; }
+.searchable-select-option[aria-disabled="true"] { opacity:.45; cursor:default; }
+.searchable-select-group { padding:10px 12px 4px; color:var(--muted); font-size:10px; font-weight:700; }
+.searchable-select-empty { padding:16px 12px; color:var(--muted); }
 :root {
   --font-display: "Aptos Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
   --font-body: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;

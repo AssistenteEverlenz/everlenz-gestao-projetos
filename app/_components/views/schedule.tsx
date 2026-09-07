@@ -1,4 +1,5 @@
 "use client";
+import { SearchableSelect } from "../searchable-select";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -2505,12 +2506,12 @@ function DuplicateTaskModal({
         </div>
         <label>
           <span>Inserir dentro de</span>
-          <select value={destinationParentId} onChange={(event) => setDestinationParentId(event.target.value)}>
+          <SearchableSelect value={destinationParentId} onChange={(event) => setDestinationParentId(event.target.value)}>
             <option value="">Nível principal do projeto</option>
             {tasks.filter((task) => !blockedIds.has(task.id)).map((task) => (
               <option key={task.id} value={task.id}>{task.code} · {task.name}</option>
             ))}
-          </select>
+          </SearchableSelect>
           <small>A nova estrutura entrará como o último subitem do destino escolhido.</small>
         </label>
         <div className="modal-note">
@@ -2998,7 +2999,7 @@ function TaskForm({
       </label>
       <label>
         <span>Etapa / disciplina</span>
-        <select
+        <SearchableSelect
           required={!creatingPhase}
           value={creatingPhase ? "__new__" : phase}
           onChange={(event) => {
@@ -3014,7 +3015,7 @@ function TaskForm({
           <option value="" disabled>Selecione uma disciplina</option>
           {phaseOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           <option value="__new__">+ Criar nova disciplina</option>
-        </select>
+        </SearchableSelect>
         {creatingPhase && (
           <input
             autoFocus
@@ -3027,7 +3028,7 @@ function TaskForm({
       </label>
       <label>
         <span>Item pai</span>
-        <select
+        <SearchableSelect
           value={parentId}
           onChange={(event) => setParentId(event.target.value)}
         >
@@ -3037,7 +3038,7 @@ function TaskForm({
               {task.code} · {task.name}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
       </label>
       <label>
         <span>Início planejado</span>
@@ -3129,7 +3130,7 @@ function TaskForm({
       </label>
       <label>
         <span>Responsável</span>
-        <select
+        <SearchableSelect
           value={responsibleValue}
           onChange={(event) => {
             const option = responsibleOptions.find(
@@ -3152,7 +3153,7 @@ function TaskForm({
                 ))}
             </optgroup>
           ))}
-        </select>
+        </SearchableSelect>
       </label>
       <label>
         <span>Peso no avanço</span>
@@ -3168,7 +3169,7 @@ function TaskForm({
       <div className="task-dependency-row">
         <label>
           <span>Atividade predecessora</span>
-          <select
+          <SearchableSelect
             value={dependencyId}
             onChange={(event) => {
               const value = event.target.value;
@@ -3182,13 +3183,13 @@ function TaskForm({
                 {task.code} · {task.name}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </label>
         {dependencyId && (
           <>
             <label>
               <span>Relação</span>
-              <select
+              <SearchableSelect
                 value={dependencyType}
                 onChange={(event) => {
                   const value = event.target.value as DependencyType;
@@ -3200,7 +3201,7 @@ function TaskForm({
                 <option value="SS">Início → Início (SS)</option>
                 <option value="FF">Término → Término (FF)</option>
                 <option value="SF">Início → Término (SF)</option>
-              </select>
+              </SearchableSelect>
             </label>
             <label className="dependency-lag-field">
               <span>Defasagem</span>

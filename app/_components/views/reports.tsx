@@ -1,4 +1,5 @@
 "use client";
+import { SearchableSelect } from "../searchable-select";
 /* eslint-disable @next/next/no-img-element -- relatório exibe evidências do diário */
 
 import { useMemo, useState } from "react";
@@ -633,7 +634,7 @@ export function Reports({
           <div className="template-options">
             {([['showSummary','Resumo executivo'],['showPhotos','Fotos e medições'],['showGantt','Gantt completo'],['showSCurve','Curva S'],['showAttention','Pontos de atenção']] as const).map(([key,label]) => <label key={key}><input type="checkbox" checked={templateDraft[key]} onChange={(event) => setTemplateDraft({ ...templateDraft, [key]: event.target.checked })}/><span>{label}</span></label>)}
           </div>
-          <label><span>Tamanho das fotos</span><select value={templateDraft.photoSize} onChange={(event) => setTemplateDraft({ ...templateDraft, photoSize: event.target.value as "medium" | "large" })}><option value="large">Grande — foco na evidência</option><option value="medium">Médio — mais fotos por página</option></select></label>
+          <label><span>Tamanho das fotos</span><SearchableSelect value={templateDraft.photoSize} onChange={(event) => setTemplateDraft({ ...templateDraft, photoSize: event.target.value as "medium" | "large" })}><option value="large">Grande — foco na evidência</option><option value="medium">Médio — mais fotos por página</option></SearchableSelect></label>
           <label className="switch-line"><input type="checkbox" checked={templateDraft.compact} onChange={(event) => setTemplateDraft({ ...templateDraft, compact: event.target.checked })}/><span><strong>Documento compacto</strong><small>Reduz espaços para relatórios extensos.</small></span></label>
           <div className="modal-actions"><button type="button" className="secondary-btn" onClick={() => setTemplateOpen(false)}>Cancelar</button><button className="primary-btn" disabled={approving}>{approving && <span className="button-spinner"/>}{approving ? "Salvando..." : "Salvar modelo"}</button></div>
         </form>
