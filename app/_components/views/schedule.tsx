@@ -217,6 +217,8 @@ export function Schedule({
     return tasks.find((item) => item.id === taskId) ?? null;
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState("");
   const [deletingTask, setDeletingTask] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [taskColumnWidths, setTaskColumnWidths] = useState<
@@ -1247,7 +1249,7 @@ export function Schedule({
             </button>
             <button
               className="danger-btn compact"
-              onClick={() => setBulkDeleteOpen(true)}
+              onClick={() => { setBulkDeleteConfirmation(""); setBulkDeleteOpen(true); }}
             >
               <Icon name="trash" /> Excluir seleção
             </button>
@@ -2108,6 +2110,7 @@ export function Schedule({
                 <button
                   className="danger"
                   onClick={() => {
+                    setBulkDeleteConfirmation("");
                     setBulkDeleteOpen(true);
                     setMobileActionsOpen(false);
                   }}
@@ -2202,7 +2205,8 @@ export function Schedule({
       {bulkDeleteOpen && (
         <Modal
           title="Excluir itens selecionados"
-          subtitle="A seleção será validada antes de qualquer exclusão."
+          subtitle="Exclusão definitiva. Os itens excluídos não poderão ser recuperados."
+          dismissible={!bulkProcessing}
           onClose={() => !bulkProcessing && setBulkDeleteOpen(false)}
         >
           <div className="confirm-delete-modal">
@@ -2212,14 +2216,20 @@ export function Schedule({
               Todos os descendentes dos itens-pai também serão removidos. Se qualquer
               atividade tiver registros no Diário de Obra, a operação inteira será bloqueada.
             </p>
+            <p><strong>Esta ação não pode ser desfeita, inclusive pelo comando Desfazer ou Ctrl + Z.</strong></p>
+            <label className="delete-confirmation-field">
+              <span>Digite EXCLUIR para confirmar a exclusão definitiva.</span>
+              <input value={bulkDeleteConfirmation} onChange={(event) => setBulkDeleteConfirmation(event.target.value)} disabled={bulkProcessing} autoComplete="off" spellCheck={false} placeholder="EXCLUIR" />
+            </label>
             <div className="modal-actions">
               <button className="secondary-btn" disabled={bulkProcessing} onClick={() => setBulkDeleteOpen(false)}>
                 Cancelar
               </button>
               <button
                 className="danger-btn"
-                disabled={bulkProcessing}
+                disabled={bulkProcessing || bulkDeleteConfirmation !== "EXCLUIR"}
                 onClick={async () => {
+                  if (bulkProcessing || bulkDeleteConfirmation !== "EXCLUIR") return;
                   setBulkProcessing(true);
                   try {
                     await deleteTasks([...selectedIds]);
@@ -2370,7 +2380,7 @@ export function Schedule({
                     entries.some((entry) => entry.taskId === selected.id) ||
                     tasks.some((task) => task.parentId === selected.id)
                   }
-                  onClick={() => setConfirmDelete(true)}
+                  onClick={() => { setDeleteConfirmation(""); setConfirmDelete(true); }}
                 >
                   <Icon name="trash" /> Excluir
                 </button>
@@ -2425,6 +2435,7 @@ export function Schedule({
         <Modal
           title="Excluir atividade"
           subtitle="Esta ação não pode ser desfeita."
+          dismissible={!deletingTask}
           onClose={() => {
             if (!deletingTask) setConfirmDelete(false);
           }}
@@ -2438,6 +2449,11 @@ export function Schedule({
               A atividade será removida e a numeração EAP será reorganizada. Só
               é possível excluir itens sem subitens e sem Diário de Obra.
             </p>
+            <p><strong>A exclusão é definitiva. Este item não poderá ser recuperado, inclusive pelo comando Desfazer ou Ctrl + Z.</strong></p>
+            <label className="delete-confirmation-field">
+              <span>Digite EXCLUIR para confirmar a exclusão definitiva.</span>
+              <input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} disabled={deletingTask} autoComplete="off" spellCheck={false} placeholder="EXCLUIR" />
+            </label>
             <div className="modal-actions">
               <button
                 className="secondary-btn"
@@ -2448,8 +2464,9 @@ export function Schedule({
               </button>
               <button
                 className="danger-btn"
-                disabled={deletingTask}
+                disabled={deletingTask || deleteConfirmation !== "EXCLUIR"}
                 onClick={async () => {
+                  if (deletingTask || deleteConfirmation !== "EXCLUIR") return;
                   setDeletingTask(true);
                   try {
                     await deleteTask(selected.id);

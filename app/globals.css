@@ -492,6 +492,9 @@ html[data-theme="dark"] { color-scheme:dark; }
 .gantt-row,.task-row { min-height:44px; }
 .confirm-delete-modal { display:grid; justify-items:center; gap:10px; padding:26px; text-align:center; }
 .confirm-delete-modal h3 { margin:0; font:800 18px var(--font-display); }
+.delete-confirmation-field { display:grid; gap:8px; width:min(100%,430px); text-align:left; }
+.delete-confirmation-field span { font-size:12px; color:var(--text); }
+.delete-confirmation-field input { width:100%; }
 .confirm-delete-modal p { max-width:430px; margin:0 0 10px; color:var(--muted); font-size:12px; line-height:1.55; }
 .confirm-delete-icon { display:grid; place-items:center; width:52px; height:52px; border-radius:16px; color:var(--red); background:color-mix(in srgb,var(--red) 12%,var(--surface-solid)); }
 .confirm-delete-icon svg { width:24px; }
