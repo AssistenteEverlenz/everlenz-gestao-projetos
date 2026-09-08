@@ -130,10 +130,15 @@ export async function PATCH(request: Request) {
     const { data: projects } = await context.admin.from("projects").select("id").eq("organization_id", context.project.organization_id);
     const ids = (projects ?? []).map((project) => project.id);
     if (ids.length) {
-      const { error: roleError } = role === "engineer"
-        ? await context.admin.from("project_members").update({ role }).eq("user_id", userId).in("project_id", ids)
-        : await context.admin.from("project_members").update({ role }).eq("user_id", userId).eq("project_id", projectId);
+      const { error: roleError } = await context.admin.from("project_members").update({ role }).eq("user_id", userId).eq("project_id", projectId);
       if (roleError) throw new ApiError(`Erro ao atualizar as permissões: ${roleError.message}`, 500);
+      if (role === "engineer") {
+        const otherProjectIds = ids.filter((id) => id !== projectId);
+        if (otherProjectIds.length) {
+          const { error: removeExtraAccessError } = await context.admin.from("project_members").delete().eq("user_id", userId).in("project_id", otherProjectIds);
+          if (removeExtraAccessError) throw new ApiError(`O perfil foi atualizado, mas não foi possível remover os acessos extras: ${removeExtraAccessError.message}`, 500);
+        }
+      }
     }
     return NextResponse.json({ member: { id: userId, name, email: target.email ?? "", role, initials: initials(name), color: "#54756a", online: false } });
   } catch (cause) { return responseError(cause, "Não foi possível atualizar o usuário."); }
