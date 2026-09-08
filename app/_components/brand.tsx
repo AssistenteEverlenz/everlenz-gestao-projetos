@@ -12,16 +12,16 @@ export function BrandSymbols({
   return (
     <span
       className={`brand-symbols ${className}`.trim()}
-      aria-label="Everlenz em parceria com Natreb"
+      aria-label="Marca da empresa"
     >
       <span
         className="brand-symbol organization-brand"
         style={{ backgroundColor: organizationLogoBackground }}
       >
-        <img src={organizationLogoUrl || "/everlenz-mark.png"} alt="Everlenz" />
-      </span>
-      <span className="brand-symbol partner-brand">
-        <img src="/natreb-mark.png" alt="Natreb" />
+        <img
+          src={organizationLogoUrl || "/everlenz-mark.png"}
+          alt="Logo da empresa"
+        />
       </span>
     </span>
   );
