@@ -251,6 +251,7 @@ export function Schedule({
   const [editing, setEditing] = useState(false);
   const [historyTask, setHistoryTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
+  const [creatingParentId, setCreatingParentId] = useState<string | undefined>();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const zoomLevels = ["Visão geral", "Semanas", "Dias"] as const;
   const [zoom, setZoom] = useState<(typeof zoomLevels)[number]>("Visão geral");
@@ -1073,7 +1074,7 @@ export function Schedule({
               <b>Pais e dependências</b>
             </span>
           </div>
-          <button className="primary-btn" onClick={() => setCreating(true)}>
+          <button className="primary-btn" onClick={() => { setCreatingParentId(undefined); setCreating(true); }}>
             <Icon name="plus" /> Criar primeira atividade
           </button>
         </section>
@@ -1083,6 +1084,7 @@ export function Schedule({
             tasks={tasks}
             members={members}
             projectTeams={projectTeams}
+            defaultParentId={creatingParentId}
             onClose={() => setCreating(false)}
             onSave={async (task) => {
               await addTask(task);
@@ -1099,7 +1101,7 @@ export function Schedule({
         <div className="toolbar-group">
           <button
             className="primary-btn compact"
-            onClick={() => setCreating(true)}
+            onClick={() => { setCreatingParentId(undefined); setCreating(true); }}
           >
             <Icon name="plus" /> Nova atividade
           </button>
@@ -1502,6 +1504,23 @@ export function Schedule({
                           </em>
                         )}
                       </small>
+                      {!selectionMode && (
+                        <button
+                          type="button"
+                          className="task-add-child"
+                          aria-label={`Criar item filho de ${task.name}`}
+                          title="Criar item filho"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setCreatingParentId(task.id);
+                            setCreating(true);
+                          }}
+                        >
+                          <Icon name="plus" />
+                        </button>
+                      )}
                     </span>
                     <span>
                       {task.milestone && childCount === 0
@@ -2036,6 +2055,7 @@ export function Schedule({
           <div className="mobile-gantt-actions-menu glass">
             <button
               onClick={() => {
+                setCreatingParentId(undefined);
                 setCreating(true);
                 setMobileActionsOpen(false);
               }}
@@ -2137,6 +2157,7 @@ export function Schedule({
           tasks={tasks}
           members={members}
           projectTeams={projectTeams}
+          defaultParentId={creatingParentId}
           onClose={() => setCreating(false)}
           onSave={async (task) => {
             await addTask(task);
@@ -2364,6 +2385,15 @@ export function Schedule({
                   Ver diários
                 </button>
               </div>
+              {selected.notes?.trim() && (
+                <div className="task-technical-notes">
+                  <Icon name="info" />
+                  <div>
+                    <strong>Observações técnicas</strong>
+                    <p>{selected.notes.trim()}</p>
+                  </div>
+                </div>
+              )}
               <div className="modal-note">
                 <Icon name="journal" />
                 <p>
@@ -2842,6 +2872,7 @@ function TaskForm({
   members,
   projectTeams,
   initial,
+  defaultParentId,
   onClose,
   onSave,
 }: {
@@ -2850,6 +2881,7 @@ function TaskForm({
   members: Member[];
   projectTeams: ProjectTeam[];
   initial?: Task;
+  defaultParentId?: string;
   onClose: () => void;
   onSave: (task: Task) => void | Promise<void>;
 }) {
@@ -2859,7 +2891,8 @@ function TaskForm({
   );
   const [nextId] = useState(() => initial?.id ?? crypto.randomUUID());
   const [name, setName] = useState(initial?.name ?? "");
-  const [phase, setPhase] = useState(initial?.phase ?? "");
+  const defaultParent = tasks.find((task) => task.id === defaultParentId);
+  const [phase, setPhase] = useState(initial?.phase ?? defaultParent?.phase ?? "");
   const [creatingPhase, setCreatingPhase] = useState(false);
   const [plannedStart, setPlannedStart] = useState(
     initial?.plannedStart ?? project.start,
@@ -2889,7 +2922,7 @@ function TaskForm({
   const [responsibleRefId, setResponsibleRefId] = useState(
     initial?.responsibleRefId ?? "",
   );
-  const [parentId, setParentId] = useState(initial?.parentId ?? "");
+  const [parentId, setParentId] = useState(initial?.parentId ?? defaultParentId ?? "");
   const [dependencyId, setDependencyId] = useState(initial?.dependencyId ?? "");
   const [dependencyType, setDependencyType] = useState<DependencyType>(
     initial?.dependencyType ?? "FS",

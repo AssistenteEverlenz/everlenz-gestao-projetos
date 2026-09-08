@@ -496,6 +496,11 @@ html[data-theme="dark"] { color-scheme:dark; }
 .delete-confirmation-field span { font-size:12px; color:var(--text); }
 .delete-confirmation-field input { width:100%; }
 .confirm-delete-modal p { max-width:430px; margin:0 0 10px; color:var(--muted); font-size:12px; line-height:1.55; }
+.task-technical-notes { display:grid; grid-template-columns:34px minmax(0,1fr); gap:11px; align-items:start; padding:14px; border:1px solid color-mix(in srgb,#185785 28%,var(--line)); border-radius:14px; background:color-mix(in srgb,#185785 7%,var(--surface-solid)); }
+.task-technical-notes>svg { width:18px; margin:2px auto 0; color:#185785; }
+.task-technical-notes div { min-width:0; }
+.task-technical-notes strong { font:750 12px var(--font-display); }
+.task-technical-notes p { margin:5px 0 0; color:var(--muted); font-size:11px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
 .confirm-delete-icon { display:grid; place-items:center; width:52px; height:52px; border-radius:16px; color:var(--red); background:color-mix(in srgb,var(--red) 12%,var(--surface-solid)); }
 .confirm-delete-icon svg { width:24px; }
 .button-spinner { display:inline-block; flex:0 0 auto; width:15px; height:15px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:button-spin .7s linear infinite; }
@@ -512,6 +517,11 @@ html[data-theme="dark"] { color-scheme:dark; }
 
 /* Hierarquia, leitura e semântica operacional do cronograma */
 .task-name-cell { position:relative; min-height:44px; align-content:center; }
+.task-add-child { position:absolute; z-index:4; right:7px; top:50%; width:26px; height:26px; display:grid; place-items:center; padding:0; border:1px solid color-mix(in srgb,#185785 45%,var(--line)); border-radius:8px; background:var(--surface-solid); color:#185785; box-shadow:0 5px 14px #0002; cursor:pointer; opacity:0; pointer-events:none; transform:translateY(-50%) scale(.9); transition:opacity .15s ease,transform .15s ease,background .15s ease; }
+.task-add-child svg { width:14px; }
+.gantt-task-line:hover .task-add-child,.gantt-task-line:focus-within .task-add-child { opacity:1; pointer-events:auto; transform:translateY(-50%) scale(1); }
+.task-add-child:hover,.task-add-child:focus-visible { background:color-mix(in srgb,#185785 14%,var(--surface-solid)); outline:2px solid color-mix(in srgb,#185785 38%,transparent); }
+.gantt-task-line:hover .task-name-cell,.gantt-task-line:focus-within .task-name-cell { padding-right:40px; }
 .tree-toggle { display:inline-grid; place-items:center; flex:0 0 18px; width:18px; height:18px; margin:0; border:1px solid var(--line-strong); border-radius:6px; background:var(--surface-solid); color:var(--accent-dark); cursor:pointer; }
 .tree-toggle svg { width:12px; height:12px; transition:transform .18s ease; }
 .tree-toggle.expanded svg { transform:rotate(90deg); }
