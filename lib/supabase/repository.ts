@@ -288,6 +288,7 @@ export async function loadWorkspaces(userEmail: string) {
         progressAdded: Number(item.progress_delta),
         progressAfter: Number(item.progress_after),
         author: item.author_name,
+        authorId: item.author_id ?? undefined,
         weather: item.weather ?? "Não informado",
         crew: item.crew_count,
         teams: (updateTeamRows ?? [])

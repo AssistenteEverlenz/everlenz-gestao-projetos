@@ -4,7 +4,7 @@ import { SearchableSelect } from "../searchable-select";
 
 import { useMemo, useState } from "react";
 import { compressJournalPhoto } from "@/lib/images";
-import { EntryHistoryModal } from "../entry-history";
+import { canModifyEntry, EntryHistoryModal } from "../entry-history";
 import { Icon } from "../icons";
 import type {
   JournalEntry,
@@ -26,6 +26,8 @@ type Props = {
   projectTeams?: ProjectTeam[];
   navigate: (view: ViewId) => void;
   metrics: { overall: number; active: number };
+  currentUserId: string;
+  canModerate: boolean;
   addEntry: (entry: JournalEntry) => Promise<void>;
   editEntry: (entry: JournalEntry) => Promise<void>;
   deleteEntry: (entry: JournalEntry) => Promise<void>;
@@ -54,6 +56,8 @@ export function Journal({
   projectTeams = [],
   metrics,
   navigate,
+  currentUserId,
+  canModerate,
   addEntry,
   editEntry,
   deleteEntry,
@@ -325,6 +329,8 @@ export function Journal({
                         >
                           Abrir diário
                         </button>
+                        {canModifyEntry(entry, currentUserId, canModerate) && (
+                        <>
                         <button
                           onClick={() => {
                             setSelectedEditing(true);
@@ -357,6 +363,8 @@ export function Journal({
                         >
                           Excluir
                         </button>
+                        </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -485,6 +493,8 @@ export function Journal({
             executableTasks[0]
           }
           entries={[selectedEntry]}
+          currentUserId={currentUserId}
+          canModerate={canModerate}
           onClose={() => setSelectedEntry(null)}
           initialEditing={selectedEditing}
           onUpdate={async (entry) => {

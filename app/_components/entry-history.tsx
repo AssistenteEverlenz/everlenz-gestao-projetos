@@ -15,9 +15,20 @@ const fullDate = (value: string) =>
     year: "numeric",
   });
 
+/** Autores editam/excluem os próprios registros; administradores e gestores, todos. */
+export function canModifyEntry(
+  entry: JournalEntry,
+  currentUserId: string,
+  canModerate: boolean,
+) {
+  return canModerate || entry.authorId === currentUserId;
+}
+
 export function EntryHistoryModal({
   task,
   entries,
+  currentUserId,
+  canModerate,
   onClose,
   onUpdate,
   onDelete,
@@ -25,13 +36,17 @@ export function EntryHistoryModal({
 }: {
   task: Task;
   entries: JournalEntry[];
+  currentUserId: string;
+  canModerate: boolean;
   onClose: () => void;
   onUpdate: (entry: JournalEntry) => Promise<void>;
   onDelete: (entry: JournalEntry) => Promise<void>;
   initialEditing?: boolean;
 }) {
+  const canModify = (entry: JournalEntry) =>
+    canModifyEntry(entry, currentUserId, canModerate);
   const [editing, setEditing] = useState<JournalEntry | null>(
-    initialEditing ? (entries[0] ?? null) : null,
+    initialEditing && entries[0] && canModify(entries[0]) ? entries[0] : null,
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{
@@ -82,6 +97,7 @@ export function EntryHistoryModal({
                     {entry.crew === 1 ? "" : "s"}
                   </small>
                 </div>
+                {canModify(entry) && (
                 <div className="entry-history-actions">
                   <button
                     className="secondary-btn compact"
@@ -117,6 +133,7 @@ export function EntryHistoryModal({
                     {deletingId === entry.id ? "Excluindo..." : "Excluir"}
                   </button>
                 </div>
+                )}
               </header>
               <p>{entry.description}</p>
               <div className="history-progress">

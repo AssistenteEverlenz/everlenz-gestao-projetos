@@ -58,6 +58,9 @@ type Props = {
   refreshSchedule: () => Promise<void>;
   refreshTaskBaselines: () => Promise<void>;
   setToast: (value: string) => void;
+  /** Administradores e gestores; o perfil Usuário apenas visualiza o Gantt. */
+  canEdit: boolean;
+  currentUserId: string;
 };
 
 const dayMs = 86_400_000;
@@ -208,6 +211,8 @@ export function Schedule({
   refreshSchedule,
   refreshTaskBaselines,
   setToast,
+  canEdit,
+  currentUserId,
 }: Props) {
   const [selected, setSelected] = useState<Task | null>(() => {
     if (typeof window === "undefined") return null;
@@ -827,6 +832,7 @@ export function Schedule({
     taskId: string,
   ) {
     if (
+      !canEdit ||
       event.button !== 0 ||
       (event.target as HTMLElement).closest(".drag-grip,.tree-toggle")
     )
@@ -1074,9 +1080,11 @@ export function Schedule({
               <b>Pais e dependências</b>
             </span>
           </div>
-          <button className="primary-btn" onClick={() => { setCreatingParentId(undefined); setCreating(true); }}>
-            <Icon name="plus" /> Criar primeira atividade
-          </button>
+          {canEdit && (
+            <button className="primary-btn" onClick={() => { setCreatingParentId(undefined); setCreating(true); }}>
+              <Icon name="plus" /> Criar primeira atividade
+            </button>
+          )}
         </section>
         {creating && (
           <TaskForm
@@ -1099,6 +1107,8 @@ export function Schedule({
     <div className="view-stack schedule-view">
       <section className="schedule-toolbar glass">
         <div className="toolbar-group">
+          {canEdit && (
+          <>
           <button
             className="primary-btn compact"
             onClick={() => { setCreatingParentId(undefined); setCreating(true); }}
@@ -1139,6 +1149,8 @@ export function Schedule({
               ? "Atualizando..."
               : "Atualizar linha de base"}
           </button>
+          </>
+          )}
           <button
             className={`secondary-btn compact gantt-filter-button ${activeFilterCount ? "active" : ""}`}
             onClick={() => setFilterOpen(true)}
@@ -1146,6 +1158,7 @@ export function Schedule({
             <Icon name="filter" /> Filtros
             {activeFilterCount > 0 && <b>{activeFilterCount}</b>}
           </button>
+          {canEdit && (
           <button
             className={`secondary-btn compact gantt-selection-toggle ${selectionMode ? "active" : ""}`}
             onClick={() => {
@@ -1162,6 +1175,7 @@ export function Schedule({
             <Icon name="check" />
             {selectionMode ? "Concluir seleção" : "Selecionar itens"}
           </button>
+          )}
         </div>
         <div className="toolbar-group center">
           <label className="switch-label">
@@ -1450,18 +1464,20 @@ export function Schedule({
                           aria-label={`Selecionar ${task.name}`}
                         />
                       )}
-                      <span
-                        className="drag-grip"
-                        role="button"
-                        aria-label={`Reorganizar ${task.name}`}
-                        onPointerDown={(event) =>
-                          beginPointerDrag(event, task.id)
-                        }
-                        onPointerMove={movePointerDrag}
-                        onPointerUp={endPointerDrag}
-                      >
-                        ••
-                      </span>
+                      {canEdit && (
+                        <span
+                          className="drag-grip"
+                          role="button"
+                          aria-label={`Reorganizar ${task.name}`}
+                          onPointerDown={(event) =>
+                            beginPointerDrag(event, task.id)
+                          }
+                          onPointerMove={movePointerDrag}
+                          onPointerUp={endPointerDrag}
+                        >
+                          ••
+                        </span>
+                      )}
                       <b>{task.code}</b>
                       {childCount > 0 && (
                         <span
@@ -1504,7 +1520,7 @@ export function Schedule({
                           </em>
                         )}
                       </small>
-                      {!selectionMode && (
+                      {canEdit && !selectionMode && (
                         <button
                           type="button"
                           className="task-add-child"
@@ -1886,7 +1902,7 @@ export function Schedule({
             return (
               <button
                 data-task-id={task.id}
-                draggable
+                draggable={canEdit}
                 onDragStart={(event) => {
                   suppressTaskClick.current = true;
                   setDraggingId(task.id);
@@ -1909,16 +1925,18 @@ export function Schedule({
                     : openTaskFromTable(event, task)
                 }
               >
-                <span
-                  className="drag-grip"
-                  role="button"
-                  aria-label={`Reorganizar ${task.name}`}
-                  onPointerDown={(event) => beginPointerDrag(event, task.id)}
-                  onPointerMove={movePointerDrag}
-                  onPointerUp={endPointerDrag}
-                >
-                  ••
-                </span>
+                {canEdit && (
+                  <span
+                    className="drag-grip"
+                    role="button"
+                    aria-label={`Reorganizar ${task.name}`}
+                    onPointerDown={(event) => beginPointerDrag(event, task.id)}
+                    onPointerMove={movePointerDrag}
+                    onPointerUp={endPointerDrag}
+                  >
+                    ••
+                  </span>
+                )}
                 {selectionMode && (
                   <span
                     className="mobile-task-checkbox"
@@ -2053,6 +2071,8 @@ export function Schedule({
       <div className={`mobile-gantt-actions ${mobileActionsOpen ? "open" : ""}`}>
         {mobileActionsOpen && (
           <div className="mobile-gantt-actions-menu glass">
+            {canEdit && (
+            <>
             <button
               onClick={() => {
                 setCreatingParentId(undefined);
@@ -2094,6 +2114,8 @@ export function Schedule({
                 ? "Atualizando..."
                 : "Atualizar linha de base"}
             </button>
+            </>
+            )}
             <button
               onClick={() => {
                 setFilterOpen(true);
@@ -2103,6 +2125,8 @@ export function Schedule({
               <Icon name="filter" /> Filtros
               {activeFilterCount > 0 && <b>{activeFilterCount}</b>}
             </button>
+            {canEdit && (
+            <>
             <button
               className={selectionMode ? "active" : ""}
               onClick={() => {
@@ -2138,6 +2162,8 @@ export function Schedule({
                   <Icon name="trash" /> Excluir seleção
                 </button>
               </>
+            )}
+            </>
             )}
           </div>
         )}
@@ -2337,7 +2363,7 @@ export function Schedule({
                     </span>
                   </div>
                 </div>
-              ) : (
+              ) : canEdit ? (
                 <label className="range-field">
                   <span>
                     Avanço físico <strong>{selected.progress}%</strong>
@@ -2360,6 +2386,16 @@ export function Schedule({
                     <small>100%</small>
                   </div>
                 </label>
+              ) : (
+                <div className="parent-progress-note">
+                  <Icon name="trend" />
+                  <div>
+                    <strong>Avanço físico: {selected.progress}%</strong>
+                    <span>
+                      Atualizado pelos registros do Diário de Obra.
+                    </span>
+                  </div>
+                </div>
               )}
               <div className="task-history-callout">
                 <Icon name="journal" />
@@ -2394,6 +2430,8 @@ export function Schedule({
                   </div>
                 </div>
               )}
+              {canEdit && (
+              <>
               <div className="modal-note">
                 <Icon name="journal" />
                 <p>
@@ -2457,6 +2495,8 @@ export function Schedule({
                   </button>
                 )}
               </div>
+              </>
+              )}
             </div>
           )}
         </Modal>
@@ -2524,6 +2564,8 @@ export function Schedule({
         <EntryHistoryModal
           task={historyTask}
           entries={entries.filter((entry) => entry.taskId === historyTask.id)}
+          currentUserId={currentUserId}
+          canModerate={canEdit}
           onClose={() => setHistoryTask(null)}
           onUpdate={editEntry}
           onDelete={deleteEntry}

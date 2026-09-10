@@ -15,9 +15,11 @@ type Props = {
   editEntry: (entry: JournalEntry) => Promise<void>;
   deleteEntry: (entry: JournalEntry) => Promise<void>;
   navigate: (view: ViewId) => void;
+  currentUserId: string;
+  canModerate: boolean;
 };
 
-export function Photos({ project, tasks, entries, editEntry, deleteEntry, navigate }: Props) {
+export function Photos({ project, tasks, entries, editEntry, deleteEntry, navigate, currentUserId, canModerate }: Props) {
   const [eap, setEap] = useState("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -63,7 +65,7 @@ export function Photos({ project, tasks, entries, editEntry, deleteEntry, naviga
         <div><span className="photo-eap">EAP {item.task?.code ?? "—"}</span><strong>{item.entry.title}</strong><small>{item.entry.date.split("-").reverse().join("/")} · +{item.entry.progressAdded}% medido</small><footer><span><button onClick={() => setHistoryEntry(item.entry)}>Abrir diário</button><button onClick={() => { if (item.task) window.sessionStorage.setItem("emdia-focus-task", item.task.id); navigate("schedule"); }}>Ver atividade</button></span><em>{item.task?.name}</em></footer></div>
       </article>)}
     </section>}
-    {historyEntry && <EntryHistoryModal task={tasks.find((task) => task.id === historyEntry.taskId) ?? tasks[0]} entries={[historyEntry]} onClose={() => setHistoryEntry(null)} onUpdate={async (entry) => { await editEntry(entry); setHistoryEntry(entry); }} onDelete={async (entry) => { await deleteEntry(entry); setHistoryEntry(null); }}/>} 
+    {historyEntry && <EntryHistoryModal task={tasks.find((task) => task.id === historyEntry.taskId) ?? tasks[0]} entries={[historyEntry]} currentUserId={currentUserId} canModerate={canModerate} onClose={() => setHistoryEntry(null)} onUpdate={async (entry) => { await editEntry(entry); setHistoryEntry(entry); }} onDelete={async (entry) => { await deleteEntry(entry); setHistoryEntry(null); }}/>} 
     {preview && <div className="photo-lightbox" role="dialog" aria-modal="true" onMouseDown={(event) => event.target === event.currentTarget && setPreview(null)}><header><strong>{preview.label}</strong><button className="icon-btn" onClick={() => setPreview(null)}><Icon name="close"/></button></header><img src={preview.url} alt={preview.label}/></div>}
     {batchOpen && <Modal title="Relatório fotográfico em lote" subtitle={`${selectedPhotos.length} evidências selecionadas`} onClose={() => setBatchOpen(false)} wide><div className="report-preview"><div className="report-paper photo-batch-paper"><header><div className="report-logo"><img src="/emdia.svg" alt=""/><strong>em dia</strong><span>BY EVERLENZ</span></div><small>RELATÓRIO FOTOGRÁFICO</small></header><div className="report-cover"><span>ACOMPANHAMENTO VISUAL</span><h2>{project.name}</h2><p>{project.client} · {project.location}</p></div><section className="photo-batch-grid">{selectedPhotos.map((item) => <article key={item.key}><img src={item.photo.url} alt={item.entry.title}/><div><b>EAP {item.task?.code ?? "—"} · {item.task?.name}</b><strong>{item.entry.title}</strong><p>{item.entry.description}</p><span>{item.entry.progressBefore}% → {item.entry.progressAfter}% (+{item.entry.progressAdded}%)</span></div></article>)}</section><footer>Em Dia — acompanhamento técnico com evidências de campo</footer></div><div className="preview-actions"><button className="secondary-btn" onClick={() => setBatchOpen(false)}>Fechar</button><button className="primary-btn" onClick={() => window.print()}><Icon name="download"/> Exportar PDF</button></div></div></Modal>}
   </div>;

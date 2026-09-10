@@ -75,6 +75,8 @@ export type JournalEntry = {
   progressAdded: number;
   progressAfter: number;
   author: string;
+  /** Usuário que criou o registro; define quem pode editá-lo ou excluí-lo. */
+  authorId?: string;
   weather: string;
   crew: number;
   teams?: EntryTeam[];

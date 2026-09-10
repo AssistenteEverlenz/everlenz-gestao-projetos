@@ -23,6 +23,7 @@ Execute os arquivos no SQL Editor de um projeto Supabase novo, nesta ordem:
 19. 019_project_brand_variants.sql
 20. 020_task_duration_and_bulk_delete.sql
 21. 021_organization_staff_access.sql
+22. 022_view_only_user_permissions.sql
 
 O fluxo crítico usa a função record_daily_progress. Ela bloqueia a atividade,
 calcula o percentual final e grava diário, medição e metadados das fotos na mesma
@@ -63,3 +64,9 @@ configurar uma cor de fundo para cada marca.
 
 A migration 020 armazena durações fracionadas e adiciona a exclusão transacional
 de conjuntos do Gantt, incluindo a validação dos registros do Diário de Obra.
+
+A migration 022 torna o perfil Usuário somente leitura no Gantt e no Status
+Report (atividades, dependências, relatórios, fluxo de aprovação e modelos ficam
+restritos a administradores e gestores). No Diário de Obra o Usuário continua
+criando registros, mas só edita e exclui os próprios; a view `daily_report_feed`
+passa a expor `author_id` para a interface aplicar a mesma regra.

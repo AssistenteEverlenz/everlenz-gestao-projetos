@@ -270,6 +270,11 @@ export function Workspace() {
           role: "Usuário" as const,
         }
       : currentUser);
+  const currentUserId = authUser?.id ?? currentUser.id;
+  // Perfil Usuário só visualiza Gantt e Status Report e edita apenas os próprios diários.
+  const canManageProject =
+    authenticatedMember.role === "Administrador" ||
+    authenticatedMember.role === "Gestor";
   const meta = titles[view];
 
   useEffect(() => {
@@ -736,8 +741,9 @@ export function Workspace() {
     );
   }
 
-  async function addEntry(entry: JournalEntry) {
+  async function addEntry(newEntry: JournalEntry) {
     if (!workspace) return;
+    const entry = { ...newEntry, authorId: currentUserId };
     const applyEntry = () =>
       updateCurrent((current) => ({
         ...current,
@@ -1365,7 +1371,8 @@ export function Workspace() {
   }
 
   async function ensureReport(reportDate: string) {
-    if (!workspace) return;
+    // Somente a gestão cria o registro do relatório; o Usuário abre a prévia montada pelo diário.
+    if (!workspace || !canManageProject) return;
     const id = remoteMode
       ? await ensureRemoteStatusReport(workspace.project.id, reportDate)
       : crypto.randomUUID();
@@ -1844,6 +1851,8 @@ export function Workspace() {
           {workspace && common && view === "schedule" && (
             <Schedule
               {...common}
+              canEdit={canManageProject}
+              currentUserId={currentUserId}
               addTask={addTask}
               addTasks={addTasks}
               editTask={editTask}
@@ -1862,6 +1871,8 @@ export function Workspace() {
           {workspace && common && view === "journal" && (
             <Journal
               {...common}
+              currentUserId={currentUserId}
+              canModerate={canManageProject}
               addEntry={addEntry}
               editEntry={editEntry}
               deleteEntry={deleteEntry}
@@ -1873,6 +1884,8 @@ export function Workspace() {
               tasks={common.tasks}
               entries={common.entries}
               navigate={navigate}
+              currentUserId={currentUserId}
+              canModerate={canManageProject}
               editEntry={editEntry}
               deleteEntry={deleteEntry}
             />
@@ -1906,6 +1919,7 @@ export function Workspace() {
           {workspace && common && view === "reports" && (
             <Reports
               {...common}
+              canManage={canManageProject}
               ensureReport={ensureReport}
               approveReport={approveReport}
               transitionReport={transitionReport}

@@ -32,6 +32,8 @@ type Props = {
   issues?: ProjectIssue[];
   navigate: (view: ViewId) => void;
   metrics: { overall: number; active: number };
+  /** Administradores e gestores; o perfil Usuário apenas visualiza e exporta. */
+  canManage: boolean;
   ensureReport: (date: string) => Promise<void>;
   approveReport: (date: string) => Promise<void>;
   transitionReport: (reportId: string, status: ReportSummary["status"], note?: string) => Promise<void>;
@@ -55,6 +57,7 @@ export function Reports({
   reports,
   metrics,
   navigate,
+  canManage,
   ensureReport,
   transitionReport,
   saveReportTemplate,
@@ -400,15 +403,17 @@ export function Reports({
           </div>
         </div>
         <div className="report-builder-actions">
-          <button className="secondary-btn" onClick={() => { setTemplateDraft(activeTemplate); setTemplateOpen(true); }}>
-            <Icon name="settings" /> Modelo
-          </button>
+          {canManage && (
+            <button className="secondary-btn" onClick={() => { setTemplateDraft(activeTemplate); setTemplateOpen(true); }}>
+              <Icon name="settings" /> Modelo
+            </button>
+          )}
           <button
             className="primary-btn"
             disabled={openingDate !== null}
             onClick={() => void openReport(reportDates[0])}
           >
-            {openingDate === reportDates[0] ? "Preparando..." : "Revisar o mais recente"}{" "}
+            {openingDate === reportDates[0] ? "Preparando..." : canManage ? "Revisar o mais recente" : "Abrir o mais recente"}{" "}
             <Icon name="arrow" />
           </button>
         </div>
@@ -532,7 +537,7 @@ export function Reports({
                   </div>
                 </div>
                 {activeTemplate.showSummary && <section className="report-executive-summary">
-                  <div className="report-section-heading"><h3>Resumo executivo</h3><button className="secondary-btn compact no-print" disabled={generatingSummary || !selectedReport} onClick={() => void handleGenerateSummary()}><Icon name="spark"/>{generatingSummary ? " Gerando..." : " Gerar resumo inteligente"}</button></div>
+                  <div className="report-section-heading"><h3>Resumo executivo</h3>{canManage && <button className="secondary-btn compact no-print" disabled={generatingSummary || !selectedReport} onClick={() => void handleGenerateSummary()}><Icon name="spark"/>{generatingSummary ? " Gerando..." : " Gerar resumo inteligente"}</button>}</div>
                   <p>
                     {selectedReport?.executiveSummary ?? <>Foram realizados {reportEntries.length} registros em{" "}
                     {new Set(reportEntries.map((entry) => entry.taskId)).size}{" "}
@@ -618,10 +623,11 @@ export function Reports({
                 >
                   <Icon name="download" /> Exportar PDF
                 </button>
-                {selectedStatus === "draft" && <button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("review")}><Icon name="share" /> Enviar para revisão</button>}
-                {selectedStatus === "review" && <><button className="secondary-btn" disabled={approving} onClick={() => setReviewOpen("draft")}>Devolver</button><button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("approved")}><Icon name="check" /> Aprovar relatório</button></>}
-                {selectedStatus === "approved" && <button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("sent")}><Icon name="share" /> Marcar como enviado</button>}
-                {selectedStatus === "sent" && <button className="secondary-btn" disabled>Relatório enviado</button>}
+                {!canManage && <StatusBadge value={statusLabel(selectedDate)} />}
+                {canManage && selectedStatus === "draft" && <button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("review")}><Icon name="share" /> Enviar para revisão</button>}
+                {canManage && selectedStatus === "review" && <><button className="secondary-btn" disabled={approving} onClick={() => setReviewOpen("draft")}>Devolver</button><button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("approved")}><Icon name="check" /> Aprovar relatório</button></>}
+                {canManage && selectedStatus === "approved" && <button className="primary-btn" disabled={approving} onClick={() => setReviewOpen("sent")}><Icon name="share" /> Marcar como enviado</button>}
+                {canManage && selectedStatus === "sent" && <button className="secondary-btn" disabled>Relatório enviado</button>}
               </div>
             </div>
           </Modal>
