@@ -18,8 +18,9 @@ export type Project = {
   /** Primeiro início e último término do cronograma (acompanham as atividades). */
   start: string;
   end: string;
-  /** Prazo máximo contratual; o Gantt avisa quando o cronograma passa dele. */
-  deadline?: string;
+  /** Prazo máximo em dias contados do início; o Gantt avisa quando o cronograma passa dele. */
+  deadlineDays?: number;
+  deadlineDayType?: DeadlineDayType;
   progress: number;
   status: "Planejamento" | "No prazo" | "Atenção" | "Atrasada" | "Concluída";
   description?: string;
@@ -36,6 +37,9 @@ export type Project = {
   organizationLogoUrl?: string;
   organizationLogoBackground?: string;
 };
+
+/** Como o prazo máximo é contado: dias corridos ou dias úteis do calendário da obra. */
+export type DeadlineDayType = "calendar" | "working";
 
 export type TaskResponsibleKind = "user" | "team" | "worker";
 

@@ -13,6 +13,7 @@ import {
 import { Icon, type IconName } from "./icons";
 import { BrandSymbols } from "./brand";
 import type {
+  DeadlineDayType,
   InventoryItem,
   InventoryMovement,
   InventoryRequest,
@@ -74,6 +75,7 @@ import {
   updateRemoteMember,
   updateRemoteProjectWorkDays,
   updateRemoteProjectDeadline,
+  calendarDaysBetween,
   updateRemoteTaskDates,
   updateRemoteTask,
   updateRemoteTaskProgress,
@@ -610,16 +612,29 @@ export function Workspace() {
     setToast("Calendário de trabalho atualizado.");
   }
 
-  async function updateProjectDeadline(deadline: string | null) {
+  async function updateProjectDeadline(
+    deadlineDays: number | null,
+    deadlineDayType: DeadlineDayType,
+  ) {
     if (!workspace) return;
     if (remoteMode)
-      await updateRemoteProjectDeadline(workspace.project.id, deadline);
+      await updateRemoteProjectDeadline(
+        workspace.project.id,
+        deadlineDays,
+        deadlineDayType,
+      );
     updateCurrent((current) => ({
       ...current,
-      project: { ...current.project, deadline: deadline ?? undefined },
+      project: {
+        ...current.project,
+        deadlineDays: deadlineDays ?? undefined,
+        deadlineDayType,
+      },
     }));
     setToast(
-      deadline ? "Prazo máximo do projeto atualizado." : "Prazo máximo removido.",
+      deadlineDays
+        ? "Prazo máximo do projeto atualizado."
+        : "Prazo máximo removido.",
     );
   }
 
@@ -1443,7 +1458,10 @@ export function Workspace() {
     const next: ProjectWorkspace = {
       project: {
         ...persistedProject,
-        deadline: persistedProject.deadline ?? persistedProject.end,
+        deadlineDays:
+          persistedProject.deadlineDays ??
+          calendarDaysBetween(persistedProject.start, persistedProject.end),
+        deadlineDayType: persistedProject.deadlineDayType ?? "calendar",
       },
       organizationId: remoteMode ? await getProfileOrganization() : undefined,
       tasks: [],

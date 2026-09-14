@@ -17,6 +17,7 @@ import {
   type TaskExecutionStatus,
 } from "../task-structure";
 import type {
+  DeadlineDayType,
   DependencyType,
   JournalEntry,
   Member,
@@ -63,7 +64,10 @@ type Props = {
   /** Administradores e gestores; o perfil Usuário apenas visualiza o Gantt. */
   canEdit: boolean;
   currentUserId: string;
-  updateProjectDeadline: (deadline: string | null) => Promise<void>;
+  updateProjectDeadline: (
+    deadlineDays: number | null,
+    deadlineDayType: DeadlineDayType,
+  ) => Promise<void>;
 };
 
 const dayMs = 86_400_000;
@@ -264,6 +268,8 @@ export function Schedule({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [deadlineDraft, setDeadlineDraft] = useState("");
+  const [deadlineTypeDraft, setDeadlineTypeDraft] =
+    useState<DeadlineDayType>("calendar");
   const [savingDeadline, setSavingDeadline] = useState(false);
   const [deadlineError, setDeadlineError] = useState("");
   const zoomLevels = ["Visão geral", "Semanas", "Dias"] as const;
@@ -543,25 +549,28 @@ export function Schedule({
         tasks[0].plannedEnd,
       )
     : project.end;
-  // Saúde do prazo: compara o último término do cronograma com o prazo máximo.
-  const deadline = project.deadline;
-  const deadlineExceeded = Boolean(deadline && scheduleEnd > deadline);
-  const deadlineSlack = deadline
-    ? Math.max(0, workingDuration(scheduleEnd, deadline, project.workDays) - 1)
-    : 0;
-  const deadlineOverrun = deadline
-    ? Math.max(0, workingDuration(deadline, scheduleEnd, project.workDays) - 1)
-    : 0;
+  // Saúde do prazo: compara a duração do cronograma com o prazo máximo em dias.
+  const scheduleDays = (type: DeadlineDayType) =>
+    type === "working"
+      ? workingDuration(scheduleStart, scheduleEnd, project.workDays)
+      : daysBetween(scheduleStart, scheduleEnd) + 1;
+  const deadlineDays = project.deadlineDays;
+  const deadlineType = project.deadlineDayType ?? "calendar";
+  const deadlineUnit = deadlineType === "working" ? "dias úteis" : "dias corridos";
+  const usedDays = scheduleDays(deadlineType);
+  const deadlineExceeded = deadlineDays != null && usedDays > deadlineDays;
+  const deadlineGap = deadlineDays != null ? Math.abs(deadlineDays - usedDays) : 0;
   function openDeadline() {
-    setDeadlineDraft(deadline ?? scheduleEnd);
+    setDeadlineTypeDraft(deadlineType);
+    setDeadlineDraft(String(deadlineDays ?? usedDays));
     setDeadlineError("");
     setDeadlineOpen(true);
   }
-  async function saveDeadline(next: string | null) {
+  async function saveDeadline(next: number | null) {
     setSavingDeadline(true);
     setDeadlineError("");
     try {
-      await updateProjectDeadline(next);
+      await updateProjectDeadline(next, deadlineTypeDraft);
       setDeadlineOpen(false);
     } catch (cause) {
       setDeadlineError(
@@ -1335,13 +1344,14 @@ export function Schedule({
         )}
       </section>
 
-      {deadlineExceeded && deadline && (
+      {deadlineExceeded && deadlineDays != null && (
         <div className="gantt-deadline-alert" role="alert">
           <Icon name="alert" />
           <span>
-            <strong>O cronograma passou do prazo máximo.</strong> O último
-            término é {formatDate(scheduleEnd)} e o prazo é {formatDate(deadline)}{" "}
-            (+{deadlineOverrun} dias úteis).
+            <strong>O cronograma passou do prazo máximo.</strong> Ele ocupa{" "}
+            {usedDays} {deadlineUnit} ({formatDate(scheduleStart)} a{" "}
+            {formatDate(scheduleEnd)}), acima do prazo de {deadlineDays}{" "}
+            {deadlineUnit} (+{deadlineGap}).
           </span>
         </div>
       )}
@@ -1432,24 +1442,26 @@ export function Schedule({
           <div>
             <span>SAÚDE DO PRAZO</span>
             <strong
-              className={deadlineExceeded ? "danger" : deadline ? "success" : ""}
+              className={
+                deadlineExceeded ? "danger" : deadlineDays != null ? "success" : ""
+              }
             >
-              {!deadline
+              {deadlineDays == null
                 ? "Sem prazo máximo"
                 : deadlineExceeded
                   ? "Prazo extrapolado"
                   : "Dentro do prazo"}
             </strong>
             <small>
-              {!deadline
-                ? "Defina a data limite da obra"
+              {deadlineDays == null
+                ? "Defina o prazo da obra em dias"
                 : deadlineExceeded
-                  ? `+${deadlineOverrun} dias úteis além de ${formatDate(deadline)}`
-                  : `Prazo ${formatDate(deadline)} · folga de ${deadlineSlack} dias úteis`}
+                  ? `${usedDays} de ${deadlineDays} ${deadlineUnit} · +${deadlineGap} além do prazo`
+                  : `${usedDays} de ${deadlineDays} ${deadlineUnit} · folga de ${deadlineGap}`}
             </small>
             {canEdit && (
               <button type="button" className="gantt-summary-link" onClick={openDeadline}>
-                {deadline ? "Alterar prazo" : "Definir prazo"}
+                {deadlineDays != null ? "Alterar prazo" : "Definir prazo"}
               </button>
             )}
           </div>
@@ -2322,7 +2334,7 @@ export function Schedule({
       {deadlineOpen && (
         <Modal
           title="Prazo máximo do projeto"
-          subtitle="Data limite para concluir a obra. O Gantt avisa quando o cronograma passar dela."
+          subtitle="Quantos dias a obra pode durar, contados do início do cronograma. O Gantt avisa quando passar desse prazo."
           dismissible={!savingDeadline}
           onClose={() => !savingDeadline && setDeadlineOpen(false)}
         >
@@ -2330,27 +2342,37 @@ export function Schedule({
             className="invite-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void saveDeadline(deadlineDraft);
+              void saveDeadline(Math.max(1, Math.round(Number(deadlineDraft))));
             }}
           >
             <label>
-              <span>Data limite</span>
+              <span>Prazo máximo (dias)</span>
               <input
-                type="date"
+                type="number"
                 required
-                min={scheduleStart}
+                min="1"
+                step="1"
                 value={deadlineDraft}
                 onChange={(event) => setDeadlineDraft(event.target.value)}
               />
             </label>
-            {deadlineDraft && deadlineDraft >= scheduleStart && (
-              <small>
-                Período máximo:{" "}
-                {workingDuration(scheduleStart, deadlineDraft, project.workDays)} dias
-                úteis a partir de {formatDate(scheduleStart)}. O cronograma atual
-                termina em {formatDate(scheduleEnd)}.
-              </small>
-            )}
+            <label>
+              <span>Contagem</span>
+              <select
+                value={deadlineTypeDraft}
+                onChange={(event) =>
+                  setDeadlineTypeDraft(event.target.value as DeadlineDayType)
+                }
+              >
+                <option value="calendar">Dias corridos</option>
+                <option value="working">Dias úteis (calendário da obra)</option>
+              </select>
+            </label>
+            <small>
+              O cronograma atual ocupa {scheduleDays(deadlineTypeDraft)}{" "}
+              {deadlineTypeDraft === "working" ? "dias úteis" : "dias corridos"}, de{" "}
+              {formatDate(scheduleStart)} a {formatDate(scheduleEnd)}.
+            </small>
             {deadlineError && (
               <div className="access-message">
                 <Icon name="alert" />
@@ -2358,7 +2380,7 @@ export function Schedule({
               </div>
             )}
             <div className="modal-actions">
-              {deadline && (
+              {deadlineDays != null && (
                 <button
                   type="button"
                   className="text-btn"

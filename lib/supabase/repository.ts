@@ -1,4 +1,5 @@
 import type {
+  DeadlineDayType,
   InventoryItem,
   InventoryRequest,
   JournalEntry,
@@ -96,17 +97,20 @@ export async function loadWorkspaces(userEmail: string) {
     "id,organization_id,name,client_name,contract_number,description,address,start_date,planned_end_date,status,work_days,archived_at,logo_path,logo_background,client_logo_path,client_logo_background";
   let { data: projectRows, error: projectError } = await supabase
     .from("projects")
-    .select(`${brandedColumns},deadline_date`)
+    .select(`${brandedColumns},deadline_days,deadline_day_type`)
     .order("created_at");
   // Banco ainda sem a migration 023: carrega sem o prazo máximo.
-  if (projectError?.message.includes("deadline_date")) {
+  if (projectError?.message.includes("deadline_day")) {
     const withoutDeadline = await supabase
       .from("projects")
       .select(brandedColumns)
       .order("created_at");
     projectRows =
-      withoutDeadline.data?.map((row) => ({ ...row, deadline_date: null })) ??
-      null;
+      withoutDeadline.data?.map((row) => ({
+        ...row,
+        deadline_days: null,
+        deadline_day_type: null,
+      })) ?? null;
     projectError = withoutDeadline.error;
   }
   if (projectError?.message.includes("logo_path")) {
@@ -123,7 +127,8 @@ export async function loadWorkspaces(userEmail: string) {
         logo_background: "#FFFFFF",
         client_logo_path: null,
         client_logo_background: "#FFFFFF",
-        deadline_date: null,
+        deadline_days: null,
+        deadline_day_type: null,
       })) ?? null;
     projectError = fallback.error;
   }
@@ -368,7 +373,8 @@ export async function loadWorkspaces(userEmail: string) {
           location: row.address,
           start: row.start_date,
           end: row.planned_end_date,
-          deadline: row.deadline_date ?? undefined,
+          deadlineDays: row.deadline_days ?? undefined,
+          deadlineDayType: row.deadline_day_type === "working" ? "working" : "calendar",
           progress: 0,
           status: statusMap[row.status] ?? "Planejamento",
           workDays: row.work_days ?? [1, 2, 3, 4, 5],
@@ -1001,11 +1007,14 @@ export async function createRemoteProject(project: Project) {
   );
   if (error) throw error;
   const projectId = data as string;
-  // Prazo máximo inicial = término informado na criação. Sem a migration 023 o
-  // update falha silenciosamente e o projeto segue sem prazo.
+  // Prazo máximo inicial = período informado na criação, em dias corridos. Sem a
+  // migration 023 o update falha silenciosamente e o projeto segue sem prazo.
   await getSupabaseBrowserClient()
     .from("projects")
-    .update({ deadline_date: project.end })
+    .update({
+      deadline_days: calendarDaysBetween(project.start, project.end),
+      deadline_day_type: "calendar",
+    })
     .eq("id", projectId);
   return projectId;
 }
@@ -1021,15 +1030,29 @@ export async function updateRemoteProjectWorkDays(
   if (error) throw error;
 }
 
+/** Dias corridos entre duas datas, contando o primeiro e o último dia. */
+export function calendarDaysBetween(start: string, end: string) {
+  return (
+    Math.max(
+      0,
+      Math.round(
+        (Date.parse(`${end}T12:00:00`) - Date.parse(`${start}T12:00:00`)) /
+          86_400_000,
+      ),
+    ) + 1
+  );
+}
+
 export async function updateRemoteProjectDeadline(
   projectId: string,
-  deadline: string | null,
+  deadlineDays: number | null,
+  deadlineDayType: DeadlineDayType,
 ) {
   const { error } = await getSupabaseBrowserClient()
     .from("projects")
-    .update({ deadline_date: deadline })
+    .update({ deadline_days: deadlineDays, deadline_day_type: deadlineDayType })
     .eq("id", projectId);
-  if (error?.message.includes("deadline_date"))
+  if (error?.message.includes("deadline_day"))
     throw new Error(
       "O banco ainda não tem o campo de prazo máximo. Aplique a migration 023 no Supabase.",
     );

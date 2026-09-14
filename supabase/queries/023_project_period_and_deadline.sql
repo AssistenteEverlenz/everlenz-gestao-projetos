@@ -1,10 +1,29 @@
--- O período do projeto passa a acompanhar o cronograma e ganha um prazo máximo.
+-- O período do projeto passa a acompanhar o cronograma e ganha um prazo máximo em dias.
 -- start_date/planned_end_date = primeiro início e último término das atividades;
--- deadline_date = prazo máximo contratual (inicialmente o término digitado na criação).
+-- deadline_days = prazo máximo contado a partir do início, em dias corridos ou úteis
+-- (deadline_day_type). Pode ser executada de novo com segurança, inclusive sobre a
+-- versão anterior desta migration, que usava a coluna deadline_date.
 begin;
 
-alter table public.projects add column if not exists deadline_date date;
-update public.projects set deadline_date = planned_end_date where deadline_date is null;
+alter table public.projects add column if not exists deadline_days integer;
+alter table public.projects add column if not exists deadline_day_type text not null default 'calendar';
+alter table public.projects drop constraint if exists projects_deadline_days_check;
+alter table public.projects add constraint projects_deadline_days_check check (deadline_days is null or deadline_days > 0);
+alter table public.projects drop constraint if exists projects_deadline_day_type_check;
+alter table public.projects add constraint projects_deadline_day_type_check check (deadline_day_type in ('calendar','working'));
+
+-- Prazo inicial = período digitado na criação (antes de as datas seguirem o cronograma).
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'projects' and column_name = 'deadline_date') then
+    execute $sql$update public.projects set deadline_days = deadline_date - start_date + 1
+                  where deadline_days is null and deadline_date is not null and deadline_date >= start_date$sql$;
+    execute 'alter table public.projects drop column deadline_date';
+  end if;
+end $$;
+update public.projects set deadline_days = planned_end_date - start_date + 1
+ where deadline_days is null;
 
 create or replace function public.sync_project_period_from_tasks()
 returns trigger language plpgsql security definer set search_path = '' as $$
