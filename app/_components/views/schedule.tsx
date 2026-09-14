@@ -63,6 +63,7 @@ type Props = {
   /** Administradores e gestores; o perfil Usuário apenas visualiza o Gantt. */
   canEdit: boolean;
   currentUserId: string;
+  updateProjectDeadline: (deadline: string | null) => Promise<void>;
 };
 
 const dayMs = 86_400_000;
@@ -215,6 +216,7 @@ export function Schedule({
   setToast,
   canEdit,
   currentUserId,
+  updateProjectDeadline,
 }: Props) {
   const [selected, setSelected] = useState<Task | null>(() => {
     if (typeof window === "undefined") return null;
@@ -260,6 +262,10 @@ export function Schedule({
   const [creating, setCreating] = useState(false);
   const [creatingParentId, setCreatingParentId] = useState<string | undefined>();
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [deadlineOpen, setDeadlineOpen] = useState(false);
+  const [deadlineDraft, setDeadlineDraft] = useState("");
+  const [savingDeadline, setSavingDeadline] = useState(false);
+  const [deadlineError, setDeadlineError] = useState("");
   const zoomLevels = ["Visão geral", "Semanas", "Dias"] as const;
   const [zoom, setZoom] = useState<(typeof zoomLevels)[number]>("Visão geral");
   const [mobileView, setMobileView] = useState<"execution" | "timeline">(
@@ -524,6 +530,47 @@ export function Schedule({
     return latest > value ? latest : value;
   }, project.end);
   const projectDays = Math.max(1, daysBetween(timelineStart, timelineEnd) + 1);
+  // Duração total pelo planejamento atual (sem a linha de base), do primeiro início ao último término.
+  const scheduleStart = tasks.length
+    ? tasks.reduce(
+        (value, task) => (task.plannedStart < value ? task.plannedStart : value),
+        tasks[0].plannedStart,
+      )
+    : project.start;
+  const scheduleEnd = tasks.length
+    ? tasks.reduce(
+        (value, task) => (task.plannedEnd > value ? task.plannedEnd : value),
+        tasks[0].plannedEnd,
+      )
+    : project.end;
+  // Saúde do prazo: compara o último término do cronograma com o prazo máximo.
+  const deadline = project.deadline;
+  const deadlineExceeded = Boolean(deadline && scheduleEnd > deadline);
+  const deadlineSlack = deadline
+    ? Math.max(0, workingDuration(scheduleEnd, deadline, project.workDays) - 1)
+    : 0;
+  const deadlineOverrun = deadline
+    ? Math.max(0, workingDuration(deadline, scheduleEnd, project.workDays) - 1)
+    : 0;
+  function openDeadline() {
+    setDeadlineDraft(deadline ?? scheduleEnd);
+    setDeadlineError("");
+    setDeadlineOpen(true);
+  }
+  async function saveDeadline(next: string | null) {
+    setSavingDeadline(true);
+    setDeadlineError("");
+    try {
+      await updateProjectDeadline(next);
+      setDeadlineOpen(false);
+    } catch (cause) {
+      setDeadlineError(
+        cause instanceof Error ? cause.message : "Não foi possível salvar o prazo.",
+      );
+    } finally {
+      setSavingDeadline(false);
+    }
+  }
   const planned = useMemo(() => {
     const measurable = tasks.filter(
       (task) => !tasks.some((child) => child.parentId === task.id),
@@ -1288,6 +1335,16 @@ export function Schedule({
         )}
       </section>
 
+      {deadlineExceeded && deadline && (
+        <div className="gantt-deadline-alert" role="alert">
+          <Icon name="alert" />
+          <span>
+            <strong>O cronograma passou do prazo máximo.</strong> O último
+            término é {formatDate(scheduleEnd)} e o prazo é {formatDate(deadline)}{" "}
+            (+{deadlineOverrun} dias úteis).
+          </span>
+        </div>
+      )}
       <section
         className={`gantt-shell glass ${mobileFullGantt ? "mobile-gantt-fullscreen" : ""} ${showMobileTaskTable ? "" : "mobile-task-table-hidden"}`}
       >
@@ -1363,6 +1420,38 @@ export function Schedule({
           <div>
             <span>TÉRMINO PREVISTO</span>
             <strong>{formatDate(timelineEnd)}</strong>
+          </div>
+          <div title={`${formatDate(scheduleStart)} a ${formatDate(scheduleEnd)}`}>
+            <span>DURAÇÃO TOTAL</span>
+            <strong>
+              {workingDuration(scheduleStart, scheduleEnd, project.workDays)} dias
+              úteis
+            </strong>
+            <small>{daysBetween(scheduleStart, scheduleEnd) + 1} dias corridos</small>
+          </div>
+          <div>
+            <span>SAÚDE DO PRAZO</span>
+            <strong
+              className={deadlineExceeded ? "danger" : deadline ? "success" : ""}
+            >
+              {!deadline
+                ? "Sem prazo máximo"
+                : deadlineExceeded
+                  ? "Prazo extrapolado"
+                  : "Dentro do prazo"}
+            </strong>
+            <small>
+              {!deadline
+                ? "Defina a data limite da obra"
+                : deadlineExceeded
+                  ? `+${deadlineOverrun} dias úteis além de ${formatDate(deadline)}`
+                  : `Prazo ${formatDate(deadline)} · folga de ${deadlineSlack} dias úteis`}
+            </small>
+            {canEdit && (
+              <button type="button" className="gantt-summary-link" onClick={openDeadline}>
+                {deadline ? "Alterar prazo" : "Definir prazo"}
+              </button>
+            )}
           </div>
           <div>
             <span>CAMINHO CRÍTICO</span>
@@ -2230,6 +2319,70 @@ export function Schedule({
           }}
         />
       )}
+      {deadlineOpen && (
+        <Modal
+          title="Prazo máximo do projeto"
+          subtitle="Data limite para concluir a obra. O Gantt avisa quando o cronograma passar dela."
+          dismissible={!savingDeadline}
+          onClose={() => !savingDeadline && setDeadlineOpen(false)}
+        >
+          <form
+            className="invite-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveDeadline(deadlineDraft);
+            }}
+          >
+            <label>
+              <span>Data limite</span>
+              <input
+                type="date"
+                required
+                min={scheduleStart}
+                value={deadlineDraft}
+                onChange={(event) => setDeadlineDraft(event.target.value)}
+              />
+            </label>
+            {deadlineDraft && deadlineDraft >= scheduleStart && (
+              <small>
+                Período máximo:{" "}
+                {workingDuration(scheduleStart, deadlineDraft, project.workDays)} dias
+                úteis a partir de {formatDate(scheduleStart)}. O cronograma atual
+                termina em {formatDate(scheduleEnd)}.
+              </small>
+            )}
+            {deadlineError && (
+              <div className="access-message">
+                <Icon name="alert" />
+                {deadlineError}
+              </div>
+            )}
+            <div className="modal-actions">
+              {deadline && (
+                <button
+                  type="button"
+                  className="text-btn"
+                  disabled={savingDeadline}
+                  onClick={() => void saveDeadline(null)}
+                >
+                  Remover prazo
+                </button>
+              )}
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={savingDeadline}
+                onClick={() => setDeadlineOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button className="primary-btn" disabled={savingDeadline}>
+                {savingDeadline ? "Salvando..." : "Salvar prazo"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {calendarOpen && (
         <WorkCalendarModal
           project={project}
@@ -3024,6 +3177,7 @@ function TaskForm({
         taskStartOffsets(tasks, workDays),
         nextLag,
         workDays,
+        derivesPeriod ? null : activityDuration,
       );
       const start =
         nextType === "FS"
@@ -3055,15 +3209,16 @@ function TaskForm({
     }
   }
   // Fração do dia já ocupada pelo antecessor Término→Início quando a atividade começa.
-  function dependencyOffset(start: string) {
+  function dependencyOffset(start: string, duration: number) {
     const predecessor = tasks.find((task) => task.id === dependencyId);
-    if (!predecessor || dependencyType !== "FS") return 0;
+    if (!predecessor || dependencyType !== "FS" || derivesPeriod) return 0;
     const fsStart = finishToStart(
       predecessor,
       tasks,
       taskStartOffsets(tasks, workDays),
       lagDays,
       workDays,
+      duration,
     );
     return fsStart.start === start ? fsStart.offset : 0;
   }
@@ -3273,7 +3428,7 @@ function TaskForm({
               plannedStart,
               value,
               workDays,
-              dependencyOffset(plannedStart),
+              dependencyOffset(plannedStart, value),
             );
             setPlannedEnd(end);
             if (!initial) setBaselineEnd(end);

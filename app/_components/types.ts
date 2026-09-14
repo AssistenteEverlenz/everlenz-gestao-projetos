@@ -15,8 +15,11 @@ export type Project = {
   name: string;
   client: string;
   location: string;
+  /** Primeiro início e último término do cronograma (acompanham as atividades). */
   start: string;
   end: string;
+  /** Prazo máximo contratual; o Gantt avisa quando o cronograma passa dele. */
+  deadline?: string;
   progress: number;
   status: "Planejamento" | "No prazo" | "Atenção" | "Atrasada" | "Concluída";
   description?: string;

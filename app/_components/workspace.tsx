@@ -73,6 +73,7 @@ import {
   updateRemoteEntry,
   updateRemoteMember,
   updateRemoteProjectWorkDays,
+  updateRemoteProjectDeadline,
   updateRemoteTaskDates,
   updateRemoteTask,
   updateRemoteTaskProgress,
@@ -459,6 +460,22 @@ export function Workspace() {
     };
   })();
 
+  // Início e término do projeto acompanham o cronograma; a migration 023 grava o mesmo no banco.
+  const withSchedulePeriod = (item: ProjectWorkspace): ProjectWorkspace => {
+    if (!item.tasks.length) return item;
+    const start = item.tasks.reduce(
+      (value, task) => (task.plannedStart < value ? task.plannedStart : value),
+      item.tasks[0].plannedStart,
+    );
+    const end = item.tasks.reduce(
+      (value, task) => (task.plannedEnd > value ? task.plannedEnd : value),
+      item.tasks[0].plannedEnd,
+    );
+    return start === item.project.start && end === item.project.end
+      ? item
+      : { ...item, project: { ...item.project, start, end } };
+  };
+
   function updateCurrent(
     update: (current: ProjectWorkspace) => ProjectWorkspace,
   ) {
@@ -591,6 +608,19 @@ export function Workspace() {
       tasks,
     }));
     setToast("Calendário de trabalho atualizado.");
+  }
+
+  async function updateProjectDeadline(deadline: string | null) {
+    if (!workspace) return;
+    if (remoteMode)
+      await updateRemoteProjectDeadline(workspace.project.id, deadline);
+    updateCurrent((current) => ({
+      ...current,
+      project: { ...current.project, deadline: deadline ?? undefined },
+    }));
+    setToast(
+      deadline ? "Prazo máximo do projeto atualizado." : "Prazo máximo removido.",
+    );
   }
 
   async function refreshSchedule() {
@@ -1411,7 +1441,10 @@ export function Workspace() {
       persistedProject = { ...project, id };
     }
     const next: ProjectWorkspace = {
-      project: persistedProject,
+      project: {
+        ...persistedProject,
+        deadline: persistedProject.deadline ?? persistedProject.end,
+      },
       organizationId: remoteMode ? await getProfileOrganization() : undefined,
       tasks: [],
       entries: [],
@@ -1548,7 +1581,7 @@ export function Workspace() {
 
   const common = workspace
     ? {
-        project: workspace.project,
+        project: withSchedulePeriod(workspace).project,
         tasks: normalizeTaskHierarchy(workspace.tasks),
         entries: workspace.entries,
         members: workspace.members,
@@ -1832,7 +1865,7 @@ export function Workspace() {
         <div className="content-area">
           {view === "projects" && (
             <Projects
-              workspaces={workspaces}
+              workspaces={workspaces.map(withSchedulePeriod)}
               currentUserId={authUser?.id ?? currentUser.id}
               onCreate={() => setProjectModal(true)}
               onOpen={(nextProjectId) => {
@@ -1853,6 +1886,7 @@ export function Workspace() {
               {...common}
               canEdit={canManageProject}
               currentUserId={currentUserId}
+              updateProjectDeadline={updateProjectDeadline}
               addTask={addTask}
               addTasks={addTasks}
               editTask={editTask}

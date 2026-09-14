@@ -75,6 +75,15 @@ const isParentTask = (tasks: Task[], taskId: string) =>
   tasks.some((task) => task.parentId === taskId);
 
 /**
+ * Uma atividade só aproveita a sobra do último dia do antecessor quando cabe
+ * inteira nela: 0,5 + 0,5 dividem o dia, mas 0,5 + 1 começa no dia seguinte,
+ * para que uma atividade de 1 dia comece e termine no mesmo dia.
+ */
+function fitsInRemainder(finish: number, duration: number) {
+  return finish < 1 && finish + duration <= 1 + EPSILON;
+}
+
+/**
  * Fração do primeiro dia já ocupada quando cada atividade começa (0 ≤ fração < 1).
  * Só vínculos Término→Início entre atividades executáveis herdam a fração, e apenas
  * quando o sucessor começa no mesmo dia em que o antecessor termina.
@@ -104,7 +113,7 @@ export function taskStartOffsets(tasks: Task[], workDays?: number[]) {
       );
       visiting.delete(task.id);
       if (
-        finish < 1 &&
+        fitsInRemainder(finish, taskWorkingDuration(task, workDays)) &&
         task.plannedStart ===
           shiftWorkingDays(predecessor.plannedEnd, task.lagDays ?? 0, workDays)
       )
@@ -132,18 +141,21 @@ export function taskFinishFraction(
 }
 
 /**
- * Início de um sucessor Término→Início: no mesmo dia quando o antecessor deixa
- * parte do seu último dia livre, senão no dia útil seguinte.
+ * Início de um sucessor Término→Início: no mesmo dia quando o sucessor cabe na
+ * sobra do último dia do antecessor, senão no dia útil seguinte.
+ * `successorDuration` nulo indica item-pai, que sempre ocupa dias inteiros.
  */
 export function finishToStart(
   predecessor: Task,
   tasks: Task[],
   offsets: Map<string, number>,
   lag: number,
-  workDays?: number[],
+  workDays: number[] | undefined,
+  successorDuration: number | null,
 ) {
   const finish = taskFinishFraction(predecessor, tasks, offsets, workDays);
-  const sameDay = finish < 1;
+  const sameDay =
+    successorDuration != null && fitsInRemainder(finish, successorDuration);
   return {
     start: shiftWorkingDays(
       sameDay
@@ -241,16 +253,12 @@ export function rescheduleTasks(
           offsets,
           lag,
           nextDays,
+          isParentTask(current, task.id) ? null : length,
         );
         return {
           ...task,
           plannedStart: start,
-          plannedEnd: workingEnd(
-            start,
-            length,
-            nextDays,
-            isParentTask(current, task.id) ? 0 : offset,
-          ),
+          plannedEnd: workingEnd(start, length, nextDays, offset),
         };
       }
       if (relation === "SS") {
@@ -360,6 +368,7 @@ export function rescheduleTaskSuccessors(
         offsets,
         lag,
         workDays,
+        isParentTask(result, successor.id) ? null : duration,
       );
 
       const descendantIds = new Set<string>();
