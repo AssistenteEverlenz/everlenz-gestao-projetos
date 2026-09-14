@@ -28,9 +28,11 @@ import type {
 } from "../types";
 import { Modal } from "../ui";
 import {
-  nextWorkingDay,
+  finishToStart,
   projectWorkDays,
   shiftWorkingDays,
+  taskFinishFraction,
+  taskStartOffsets,
   workingDuration,
   workingEnd,
   taskWorkingDuration,
@@ -354,6 +356,13 @@ export function Schedule({
     timer: number;
   } | null>(null);
   const orderedTasks = useMemo(() => normalizeTaskHierarchy(tasks), [tasks]);
+  // Fração do dia já ocupada no início de cada atividade: 0,5 + 0,5 dividem o mesmo dia.
+  const startOffsets = useMemo(
+    () => taskStartOffsets(orderedTasks, project.workDays),
+    [orderedTasks, project.workDays],
+  );
+  const finishOf = (task: Task) =>
+    taskFinishFraction(task, orderedTasks, startOffsets, project.workDays);
   const statusCounts = useMemo(
     () =>
       orderedTasks.reduce(
@@ -590,7 +599,7 @@ export function Schedule({
     const endValue = baseline ? task.baselineEnd : task.plannedEnd;
     if (!startValue || !endValue) return { display: "none" };
     return {
-      left: `${Math.min(99, (daysBetween(timelineStart, startValue) / projectDays) * 100)}%`,
+      left: `${Math.min(99, ((daysBetween(timelineStart, startValue) + (baseline ? 0 : (startOffsets.get(task.id) ?? 0))) / projectDays) * 100)}%`,
       width: `${Math.max(
         0.8,
         (((!tasks.some((child) => child.parentId === task.id) &&
@@ -1667,19 +1676,29 @@ export function Schedule({
                     const targetDate = targetUsesFinish
                       ? task.plannedEnd
                       : task.plannedStart;
-                    const dateX = (value: string, finish: boolean) =>
+                    // dayFraction: ponto dentro do dia (início deslocado ou término parcial).
+                    const dateX = (value: string, dayFraction: number) =>
                       Math.max(
                         3,
                         Math.min(
                           997,
-                          ((daysBetween(timelineStart, value) +
-                            (finish ? 1 : 0)) /
+                          ((daysBetween(timelineStart, value) + dayFraction) /
                             projectDays) *
                             1000,
                         ),
                       );
-                    const sourceX = dateX(sourceDate, sourceUsesFinish);
-                    const targetX = dateX(targetDate, targetUsesFinish);
+                    const sourceX = dateX(
+                      sourceDate,
+                      sourceUsesFinish
+                        ? finishOf(predecessor)
+                        : (startOffsets.get(predecessor.id) ?? 0),
+                    );
+                    const targetX = dateX(
+                      targetDate,
+                      targetUsesFinish
+                        ? finishOf(task)
+                        : (startOffsets.get(task.id) ?? 0),
+                    );
                     const sourceY = sourceIndex * 56 + 28;
                     const targetY = targetIndex * 56 + 28;
                     const rowDirection = targetY >= sourceY ? 1 : -1;
@@ -1692,7 +1711,10 @@ export function Schedule({
                           ),
                         ).length - 1;
                     const barBounds = (candidate: Task) => {
-                      const start = dateX(candidate.plannedStart, false);
+                      const start = dateX(
+                        candidate.plannedStart,
+                        startOffsets.get(candidate.id) ?? 0,
+                      );
                       const span =
                         ((!tasks.some(
                           (child) => child.parentId === candidate.id,
@@ -2996,13 +3018,24 @@ function TaskForm({
     if (!predecessor) return;
     const activityDuration = normalizeWorkingDuration(durationWorkDays);
     if (nextType === "FS" || nextType === "SS") {
-      const anchor =
+      const fsStart = finishToStart(
+        predecessor,
+        tasks,
+        taskStartOffsets(tasks, workDays),
+        nextLag,
+        workDays,
+      );
+      const start =
         nextType === "FS"
-          ? nextWorkingDay(predecessor.plannedEnd, workDays)
-          : predecessor.plannedStart;
-      const start = shiftWorkingDays(anchor, nextLag, workDays);
+          ? fsStart.start
+          : shiftWorkingDays(predecessor.plannedStart, nextLag, workDays);
       setPlannedStart(start);
-      const end = workingEnd(start, activityDuration, workDays);
+      const end = workingEnd(
+        start,
+        activityDuration,
+        workDays,
+        nextType === "FS" ? fsStart.offset : 0,
+      );
       setPlannedEnd(end);
       if (!initial) {
         setBaselineStart(start);
@@ -3020,6 +3053,19 @@ function TaskForm({
         setBaselineEnd(end);
       }
     }
+  }
+  // Fração do dia já ocupada pelo antecessor Término→Início quando a atividade começa.
+  function dependencyOffset(start: string) {
+    const predecessor = tasks.find((task) => task.id === dependencyId);
+    if (!predecessor || dependencyType !== "FS") return 0;
+    const fsStart = finishToStart(
+      predecessor,
+      tasks,
+      taskStartOffsets(tasks, workDays),
+      lagDays,
+      workDays,
+    );
+    return fsStart.start === start ? fsStart.offset : 0;
   }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -3223,7 +3269,12 @@ function TaskForm({
           onChange={(event) => {
             const value = normalizeWorkingDuration(Number(event.target.value));
             setDurationWorkDays(value);
-            const end = workingEnd(plannedStart, value, workDays);
+            const end = workingEnd(
+              plannedStart,
+              value,
+              workDays,
+              dependencyOffset(plannedStart),
+            );
             setPlannedEnd(end);
             if (!initial) setBaselineEnd(end);
           }}
