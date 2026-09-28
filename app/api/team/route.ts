@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://vgtqnphmmdxsclfagjor.supabase.co";
-const supabasePublicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "sb_publishable_G_KSK1Ud0DPkXTR9iJIRhg_By7aDsa7";
+const supabasePublicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "sb_publishable_AAtXENyy7qmM7PQCiD_HKg_4gP7T40u";
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const allowedRoles = ["admin", "manager", "engineer"] as const;
 type ProjectRole = (typeof allowedRoles)[number];
