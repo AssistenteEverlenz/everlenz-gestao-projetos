@@ -1100,24 +1100,22 @@ export async function saveRemoteBrandLogo(
 }
 
 export async function updateRemoteTaskDates(projectId: string, tasks: Task[]) {
-  const supabase = getSupabaseBrowserClient();
-  const results = await Promise.all(
-    tasks.map((task) =>
-      supabase
-        .from("tasks")
-        .update({
-          planned_start: task.plannedStart,
-          planned_end: task.plannedEnd,
-          duration_days: task.durationDays ?? null,
-          baseline_start: task.baselineStart ?? null,
-          baseline_end: task.baselineEnd ?? null,
-        })
-        .eq("id", task.id)
-        .eq("project_id", projectId),
-    ),
+  if (!tasks.length) return;
+  const { error } = await getSupabaseBrowserClient().rpc(
+    "update_project_task_schedule",
+    {
+      p_project_id: projectId,
+      p_tasks: tasks.map((task) => ({
+        id: task.id,
+        planned_start: task.plannedStart,
+        planned_end: task.plannedEnd,
+        duration_days: task.durationDays ?? null,
+        baseline_start: task.baselineStart ?? null,
+        baseline_end: task.baselineEnd ?? null,
+      })),
+    },
   );
-  const failed = results.find((result) => result.error);
-  if (failed?.error) throw failed.error;
+  if (error) throw error;
 }
 
 export async function createRemoteTask(
@@ -1288,40 +1286,25 @@ export async function updateRemoteTask(
 }
 
 export async function reorderRemoteTasks(projectId: string, tasks: Task[]) {
-  const supabase = getSupabaseBrowserClient();
-  const temporary = await Promise.all(
-    tasks.map((task, sortOrder) =>
-      supabase
-        .from("tasks")
-        .update({
-          wbs: `tmp-${task.id}`,
-          parent_id: task.parentId ?? null,
-          sort_order: sortOrder,
-        })
-        .eq("id", task.id)
-        .eq("project_id", projectId),
-    ),
+  if (!tasks.length) return;
+  const { error } = await getSupabaseBrowserClient().rpc(
+    "reorder_project_tasks",
+    {
+      p_project_id: projectId,
+      p_tasks: tasks.map((task, sortOrder) => ({
+        id: task.id,
+        parent_id: task.parentId ?? null,
+        sort_order: sortOrder,
+        wbs: task.code,
+        planned_start: task.plannedStart,
+        planned_end: task.plannedEnd,
+        duration_days: task.durationDays ?? null,
+        baseline_start: task.baselineStart ?? null,
+        baseline_end: task.baselineEnd ?? null,
+      })),
+    },
   );
-  const temporaryFailure = temporary.find((result) => result.error);
-  if (temporaryFailure?.error) throw temporaryFailure.error;
-  const results = await Promise.all(
-    tasks.map((task) =>
-      supabase
-        .from("tasks")
-        .update({
-          wbs: task.code,
-          planned_start: task.plannedStart,
-          planned_end: task.plannedEnd,
-          duration_days: task.durationDays ?? null,
-          baseline_start: task.baselineStart ?? null,
-          baseline_end: task.baselineEnd ?? null,
-        })
-        .eq("id", task.id)
-        .eq("project_id", projectId),
-    ),
-  );
-  const failed = results.find((result) => result.error);
-  if (failed?.error) throw failed.error;
+  if (error) throw error;
 }
 
 export async function updateRemoteTaskProgress(
