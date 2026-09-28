@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://lpfoxpqezcfdvdecfdos.supabase.co";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://vgtqnphmmdxsclfagjor.supabase.co";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "sb_publishable_G_KSK1Ud0DPkXTR9iJIRhg_By7aDsa7";
 
 type Input = {
