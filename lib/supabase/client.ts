@@ -1,10 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let browserClient: SupabaseClient | null = null;
-const defaultUrl = "https://lpfoxpqezcfdvdecfdos.supabase.co";
+const defaultUrl = "https://vgtqnphmmdxsclfagjor.supabase.co";
 // The publishable key is safe to ship to browsers. Environment variables take
 // precedence, while this fallback keeps self-hosted deployments operational.
-const defaultPublishableKey = "sb_publishable_tET9MkiH1_6ZqAuF4XtOuA_9qRfkaQA";
+const defaultPublishableKey = "sb_publishable_AAtXENyy7qmM7PQCiD_HKg_4gP7T40u";
 
 export function isSupabaseConfigured() {
   return Boolean(

@@ -2,8 +2,8 @@
 
 ## Ambiente atual
 
-- Project ref: lpfoxpqezcfdvdecfdos
-- URL: https://lpfoxpqezcfdvdecfdos.supabase.co
+- Project ref: vgtqnphmmdxsclfagjor
+- URL: https://vgtqnphmmdxsclfagjor.supabase.co
 - Migrations aplicadas em 25/08/2026
 - Site URL do Auth: https://emdia.everlenz.com.br
 - Buckets privados: worksite-photos e project-files
