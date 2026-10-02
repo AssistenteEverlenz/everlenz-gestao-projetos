@@ -80,6 +80,7 @@ import {
   updateRemoteTask,
   updateRemoteTaskProgress,
   deleteRemoteInventoryItem,
+  deleteRemoteInventoryItems,
   deleteRemoteInventoryMovement,
   deleteRemoteProjectTeam,
   moveRemoteInventory,
@@ -1308,6 +1309,21 @@ export function Workspace() {
     setToast("Material removido do estoque.");
   }
 
+  async function deleteInventoryItems(items: InventoryItem[]) {
+    if (!workspace || !items.length) return;
+    const ids = new Set(items.map((item) => item.id));
+    if (remoteMode) await deleteRemoteInventoryItems([...ids]);
+    updateCurrent((current) => ({
+      ...current,
+      inventory: (current.inventory ?? []).filter(
+        (currentItem) => !ids.has(currentItem.id),
+      ),
+    }));
+    setToast(
+      `${ids.size} ${ids.size === 1 ? "material removido" : "materiais removidos"} do estoque.`,
+    );
+  }
+
   async function saveIssue(issue: ProjectIssue) {
     if (!workspace) return;
     const persisted = { ...issue, id: issue.id || crypto.randomUUID() };
@@ -1954,6 +1970,7 @@ export function Workspace() {
               updateMovement={updateInventoryMovement}
               deleteMovement={deleteInventoryMovement}
               deleteItem={deleteInventoryItem}
+              deleteItems={deleteInventoryItems}
               createRequest={createInventoryRequest}
               transitionRequest={transitionInventoryRequest}
               importItems={importInventoryItems}

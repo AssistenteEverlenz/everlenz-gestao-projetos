@@ -933,6 +933,15 @@ export async function deleteRemoteInventoryItem(itemId: string) {
   if (error) throw error;
 }
 
+export async function deleteRemoteInventoryItems(itemIds: string[]) {
+  if (!itemIds.length) return;
+  const { error } = await getSupabaseBrowserClient()
+    .from("inventory_items")
+    .delete()
+    .in("id", itemIds);
+  if (error) throw error;
+}
+
 export async function saveRemoteIssue(projectId: string, issue: ProjectIssue) {
   const supabase = getSupabaseBrowserClient();
   const { data: userData } = await supabase.auth.getUser();

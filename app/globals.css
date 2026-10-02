@@ -1656,3 +1656,6 @@ html[data-theme="dark"] .timeline-row.is-parent.hierarchy-depth-2 { background:c
   .mobile-task-checkbox { width:19px; height:19px; display:grid; place-items:center; border:1px solid var(--line-strong); border-radius:6px; background:var(--surface-solid); }
   .mobile-task-checkbox svg { width:13px; color:var(--accent); stroke-width:2.5; }
 }
+.inventory-check-cell { display:flex !important; align-items:center; gap:10px; }.inventory-check-cell>span { display:grid; }.inventory-check-cell input[type="checkbox"] { width:16px; height:16px; flex:none; accent-color:var(--orange); cursor:pointer; }
+.inventory-bulk-bar { display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:10px 12px; border:1px solid color-mix(in srgb,var(--orange) 35%,var(--line)); border-radius:12px; background:color-mix(in srgb,var(--orange) 7%,var(--surface-soft)); }.inventory-bulk-bar>span { flex:1; }.inventory-bulk-bar strong { font-size:12px; }
+@media (max-width:760px) { .inventory-bulk-bar { flex-wrap:wrap; }.inventory-bulk-bar>span { display:none; } }
