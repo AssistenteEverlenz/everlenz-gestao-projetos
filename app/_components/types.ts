@@ -211,6 +211,8 @@ export type Member = {
   color: string;
   online: boolean;
   pending?: boolean;
+  /** Obras que a pessoa acessa (somente as que quem está vendo também acessa). */
+  projectIds?: string[];
 };
 
 export type ProjectWorkspace = {

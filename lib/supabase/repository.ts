@@ -84,7 +84,11 @@ export async function loadWorkspaces(userEmail: string) {
   const supabase = getSupabaseBrowserClient();
   const profile = await getProfile();
   if (!profile.organization_id)
-    return { profile, workspaces: [] as ProjectWorkspace[] };
+    return {
+      profile,
+      workspaces: [] as ProjectWorkspace[],
+      directory: [] as Member[],
+    };
 
   const { data: organization, error: organizationError } = await supabase
     .from("organizations")
@@ -536,10 +540,73 @@ export async function loadWorkspaces(userEmail: string) {
       } satisfies ProjectWorkspace;
     }),
   );
-  return { profile, workspaces };
+  const directory = await loadAccountDirectory(profile, userEmail, workspaces);
+  return { profile, workspaces, directory };
 }
 
-export async function inviteRemoteMember(projectId: string, member: Member) {
+/**
+ * Todos os usuários da conta, com o perfil da conta e as obras que cada um acessa.
+ * As obras listadas são só as que o usuário logado também enxerga (RLS).
+ */
+async function loadAccountDirectory(
+  profile: ProfileState,
+  userEmail: string,
+  workspaces: ProjectWorkspace[],
+): Promise<Member[]> {
+  const supabase = getSupabaseBrowserClient();
+  const organizationId = profile.organization_id ?? "";
+  let { data, error } = await supabase
+    .from("profiles")
+    .select("id,full_name,email,account_role")
+    .eq("organization_id", organizationId)
+    .order("full_name");
+  // Banco ainda sem a migration 025: deriva o perfil das obras.
+  if (error?.message.includes("account_role")) {
+    const fallback = await supabase
+      .from("profiles")
+      .select("id,full_name,email")
+      .eq("organization_id", organizationId)
+      .order("full_name");
+    data =
+      fallback.data?.map((row) => ({ ...row, account_role: null })) ?? null;
+    error = fallback.error;
+  }
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const access = workspaces.flatMap((workspace) =>
+      workspace.members
+        .filter((member) => member.id === row.id && !member.pending)
+        .map((member) => ({ projectId: workspace.project.id, role: member.role })),
+    );
+    const derivedRole: Member["role"] = access.some(
+      (item) => item.role === "Administrador",
+    )
+      ? "Administrador"
+      : access.some((item) => item.role === "Gestor")
+        ? "Gestor"
+        : "Usuário";
+    const name = row.full_name || row.email || "Usuário";
+    return {
+      id: row.id,
+      name,
+      email: row.email || (row.id === profile.id ? userEmail : ""),
+      role: row.account_role
+        ? (roleMap[row.account_role] ?? "Usuário")
+        : derivedRole,
+      initials: name
+        .split(/\s+/)
+        .map((part: string) => part[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase(),
+      color: row.id === profile.id ? "#26332f" : "#54756a",
+      online: row.id === profile.id,
+      projectIds: access.map((item) => item.projectId),
+    } satisfies Member;
+  });
+}
+
+export async function inviteRemoteMember(member: Member) {
   const supabase = getSupabaseBrowserClient();
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
@@ -551,10 +618,10 @@ export async function inviteRemoteMember(projectId: string, member: Member) {
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({
-      projectId,
       name: member.name,
       email: member.email,
       role: databaseRole[member.role],
+      projectIds: member.projectIds ?? [],
     }),
   });
   const result = (await response.json()) as {
@@ -597,31 +664,29 @@ async function teamRequest<T>(
 }
 
 export async function updateRemoteMember(
-  projectId: string,
-  member: Pick<Member, "id" | "name" | "role">,
+  member: Pick<Member, "id" | "name" | "role" | "projectIds">,
 ) {
   return teamRequest<{ member: Member }>("PATCH", {
     action: "update",
-    projectId,
     userId: member.id,
     name: member.name,
     role: databaseRole[member.role],
+    ...(member.projectIds ? { projectIds: member.projectIds } : {}),
   });
 }
 
-export async function resetRemoteMemberPassword(
-  projectId: string,
-  userId: string,
-) {
+export async function resetRemoteMemberPassword(userId: string) {
   return teamRequest<{ senha_provisoria: string; email: string }>("PATCH", {
     action: "reset_password",
-    projectId,
     userId,
   });
 }
 
-export async function deleteRemoteMember(projectId: string, userId: string) {
-  return teamRequest<{ deleted: boolean }>("DELETE", { projectId, userId });
+export async function deleteRemoteMember(userId: string) {
+  return teamRequest<{ deleted: boolean; remainingProjects?: number }>(
+    "DELETE",
+    { userId },
+  );
 }
 
 export async function ensureRemoteStatusReport(

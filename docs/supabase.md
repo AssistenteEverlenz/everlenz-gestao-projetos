@@ -58,6 +58,22 @@ A `SUPABASE_SERVICE_ROLE_KEY` é usada exclusivamente pela rota de servidor
 uma senha provisória aleatória. A rota valida a sessão e o papel do administrador
 ou gestor antes da operação. Nunca use o prefixo `NEXT_PUBLIC` nessa chave.
 
+### Acesso às obras (migration 025)
+
+O perfil fica em `profiles.account_role` e vale para a conta inteira; o papel em
+`project_members.role` acompanha esse perfil em cada obra liberada.
+
+- Administrador: entra automaticamente em todas as obras, inclusive nas novas.
+- Gestor: vê as obras que criou e as que foram liberadas para ele.
+- Usuário: vê somente as obras liberadas para ele.
+
+Na tela Usuários, o administrador escolhe as obras de qualquer gestor ou usuário;
+o gestor escolhe só entre as obras que ele mesmo acessa, e as demais obras da
+pessoa não mudam. Ninguém altera as próprias obras, e quem criou uma obra nunca
+perde o acesso a ela. `account_role` e `organization_id` só mudam pelo servidor
+(service role) ou por funções `SECURITY DEFINER`; um trigger barra a alteração
+direta pelo navegador.
+
 ## Armazenamento
 
 As migrations criam dois buckets privados:

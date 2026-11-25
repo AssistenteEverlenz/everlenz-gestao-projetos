@@ -233,6 +233,7 @@ export function Workspace() {
   const [needsOrganization, setNeedsOrganization] = useState(false);
   const [remoteError, setRemoteError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
+  const [directory, setDirectory] = useState<Member[]>([]);
   const [projectMenu, setProjectMenu] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectModal, setProjectModal] = useState(false);
@@ -275,6 +276,23 @@ export function Workspace() {
         }
       : currentUser);
   const currentUserId = authUser?.id ?? currentUser.id;
+  // Usuários da conta. No modo local, derivado das equipes das obras em memória.
+  const accountDirectory: Member[] = remoteMode
+    ? directory
+    : [
+        ...new Map(
+          workspaces.flatMap((item) =>
+            item.members
+              .filter((member) => !member.pending)
+              .map((member) => [member.id, member] as const),
+          ),
+        ).values(),
+      ].map((member) => ({
+        ...member,
+        projectIds: workspaces
+          .filter((item) => item.members.some((entry) => entry.id === member.id))
+          .map((item) => item.project.id),
+      }));
   // Perfil Usuário só visualiza Gantt e Status Report e edita apenas os próprios diários.
   const canManageProject =
     authenticatedMember.role === "Administrador" ||
@@ -332,10 +350,11 @@ export function Workspace() {
     if (!remoteMode || !authReady || !authUser) return;
     let active = true;
     loadAvailableWorkspaces(authUser.email ?? "")
-      .then(({ profile, workspaces: loaded }) => {
+      .then(({ profile, workspaces: loaded, directory: loadedDirectory }) => {
         if (!active) return;
         setNeedsOrganization(!profile.organization_id);
         setWorkspaces(loaded);
+        setDirectory(loadedDirectory);
         setProjectId((current) =>
           loaded.some(
             (item) => item.project.id === current && !item.project.archivedAt,
@@ -866,63 +885,53 @@ export function Workspace() {
     setToast("Diário excluído e avanço da atividade recalculado.");
   }
 
-  function updateMembersInAccount(update: (members: Member[]) => Member[], projectOnly = false) {
-    const organizationId = workspace?.organizationId;
+  // Modo local (sem Supabase): aplica o acesso por obra direto na memória.
+  function applyLocalAccess(member: Member) {
+    const allowed = new Set(member.projectIds ?? []);
     setWorkspaces((current) =>
-      current.map((item) =>
-        (projectOnly ? item.project.id === workspace?.project.id : !organizationId || item.organizationId === organizationId)
-          ? { ...item, members: update(item.members) }
-          : item,
-      ),
+      current.map((item) => {
+        const others = item.members.filter((entry) => entry.id !== member.id);
+        const grant =
+          member.role === "Administrador" || allowed.has(item.project.id);
+        return { ...item, members: grant ? [...others, member] : others };
+      }),
     );
   }
 
   async function inviteMember(member: Member) {
-    if (!workspace) return {};
-    const result = remoteMode
-      ? await inviteRemoteMember(workspace.project.id, member)
-      : { member, temporaryPassword: undefined };
-    updateMembersInAccount((current) =>
-      current.some((item) => item.id === result.member.id)
-        ? current
-        : [...current, result.member],
-      result.member.role !== "Administrador" && result.member.role !== "Gestor",
-    );
-    setToast(
-      remoteMode
-        ? "Usuário criado e liberado para acessar o Em Dia."
-        : "Pessoa adicionada à equipe.",
-    );
+    if (!remoteMode) {
+      applyLocalAccess(member);
+      setToast("Pessoa adicionada à equipe.");
+      return {};
+    }
+    const result = await inviteRemoteMember(member);
+    setReloadToken((value) => value + 1);
+    setToast("Usuário criado e liberado para acessar o Em Dia.");
     return { temporaryPassword: result.temporaryPassword };
   }
 
   async function updateMember(member: Member) {
-    if (!workspace) return;
-    if (remoteMode) await updateRemoteMember(workspace.project.id, member);
-    if (remoteMode) { setReloadToken((value) => value + 1); return; }
-    updateMembersInAccount((current) =>
-      current.map((item) =>
-        item.id === member.id ? { ...item, ...member } : item,
-      ),
-    );
+    if (!remoteMode) return applyLocalAccess(member);
+    await updateRemoteMember(member);
+    setReloadToken((value) => value + 1);
   }
 
   async function resetMemberPassword(member: Member) {
-    if (!workspace || !remoteMode) return { temporaryPassword: "" };
-    const result = await resetRemoteMemberPassword(
-      workspace.project.id,
-      member.id,
-    );
+    if (!remoteMode) return { temporaryPassword: "" };
+    const result = await resetRemoteMemberPassword(member.id);
     return { temporaryPassword: result.senha_provisoria };
   }
 
   async function deleteMember(member: Member) {
-    if (!workspace) return;
-    if (remoteMode) await deleteRemoteMember(workspace.project.id, member.id);
-    updateMembersInAccount((current) =>
-      current.filter((item) => item.id !== member.id),
-      member.role !== "Administrador" && member.role !== "Gestor",
-    );
+    if (!remoteMode) {
+      applyLocalAccess({ ...member, role: "Usuário", projectIds: [] });
+      return;
+    }
+    const result = await deleteRemoteMember(member.id);
+    setReloadToken((value) => value + 1);
+    return result.deleted
+      ? undefined
+      : `Acesso retirado das suas obras. ${member.name} continua em ${result.remainingProjects} obra(s) de outros gestores.`;
   }
 
   async function saveProjectTeam(team: ProjectTeam) {
@@ -2000,11 +2009,18 @@ export function Workspace() {
           {workspace && common && view === "team" && (
             <Team
               {...common}
-              currentUserId={authUser?.id ?? currentUser.id}
+              accountUsers={accountDirectory}
+              accountProjects={workspaces
+                .filter(
+                  (item) =>
+                    !workspace.organizationId ||
+                    item.organizationId === workspace.organizationId,
+                )
+                .map((item) => item.project)}
+              currentUserId={currentUserId}
               currentUserRole={
-                workspace.members.find(
-                  (member) => member.id === (authUser?.id ?? currentUser.id),
-                )?.role ?? "Usuário"
+                accountDirectory.find((member) => member.id === currentUserId)
+                  ?.role ?? authenticatedMember.role
               }
               inviteMember={inviteMember}
               updateMember={updateMember}
