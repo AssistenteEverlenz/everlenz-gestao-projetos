@@ -1807,3 +1807,15 @@ html[data-theme="dark"] .timeline-row.is-parent.hierarchy-depth-2 { background:c
 .journal-photo-hint { color:var(--muted); font-size:8px; }
 @media screen and (max-width:767px) { .journal-photo-buttons > label { flex:1; justify-content:center; } }
 @media screen and (min-width:768px) { .journal-photo-hint { font-size:12px; } }
+@media print {
+  /* Cabeçalho da atividade nunca se divide entre páginas e não fica órfão no fim da página:
+     bloco simples (não grid, que o Chrome fragmenta) e o bloco inteiro evita quebra quando cabe. */
+  .report-activity-block { break-inside:avoid; page-break-inside:avoid; }
+  .report-activity-block > header { display:block!important; break-inside:avoid; page-break-inside:avoid; break-after:avoid; page-break-after:avoid; }
+  .report-activity-block > header > * + * { margin-top:9px; }
+  .report-activity-block > header > footer { break-inside:avoid; }
+}
+@media print {
+  /* Fotos um pouco menores: cabem mais atividades por página e sobra menos espaço quando um bloco pula de página. */
+  .report-paper .preview-photos.photos-large img { height:68mm!important; }
+}
