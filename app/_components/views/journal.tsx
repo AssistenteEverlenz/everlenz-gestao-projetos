@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { compressJournalPhoto } from "@/lib/images";
 import { canModifyEntry, EntryHistoryModal } from "../entry-history";
 import { Icon } from "../icons";
+import { ancestorsOf, entriesContribution, formatPercent } from "../progress";
 import type {
   JournalEntry,
   JournalPhoto,
@@ -28,7 +29,7 @@ type Props = {
   metrics: { overall: number; active: number };
   currentUserId: string;
   canModerate: boolean;
-  addEntry: (entry: JournalEntry) => Promise<void>;
+  addEntries: (entries: JournalEntry[]) => Promise<void>;
   editEntry: (entry: JournalEntry) => Promise<void>;
   deleteEntry: (entry: JournalEntry) => Promise<void>;
 };
@@ -58,7 +59,7 @@ export function Journal({
   navigate,
   currentUserId,
   canModerate,
-  addEntry,
+  addEntries,
   editEntry,
   deleteEntry,
 }: Props) {
@@ -92,17 +93,14 @@ export function Journal({
   const summary = useMemo(
     () => ({
       activities: new Set(visibleEntries.map((entry) => entry.taskId)).size,
-      progress: visibleEntries.reduce(
-        (sum, entry) => sum + entry.progressAdded,
-        0,
-      ),
+      progress: entriesContribution(visibleEntries, tasks),
       photos: visibleEntries.reduce(
         (sum, entry) => sum + entry.photos.length,
         0,
       ),
       crew: Math.max(0, ...visibleEntries.map((entry) => entry.crew)),
     }),
-    [visibleEntries],
+    [visibleEntries, tasks],
   );
   const orderedEntries = useMemo(
     () =>
@@ -209,7 +207,7 @@ export function Journal({
             <Icon name="camera" /> {summary.photos} evidências
           </span>
           <span>
-            <Icon name="trend" /> +{summary.progress}% no período
+            <Icon name="trend" /> +{formatPercent(summary.progress)} p.p. da obra no período
           </span>
         </div>
         <button className="primary-btn" onClick={() => setOpen(true)}>
@@ -433,8 +431,8 @@ export function Journal({
             </div>
             <div className="daily-stats">
               <div>
-                <strong>+{summary.progress}%</strong>
-                <span>medido no período</span>
+                <strong>+{formatPercent(summary.progress)} p.p.</strong>
+                <span>avanço da obra no período</span>
               </div>
               <div>
                 <strong>{summary.activities}</strong>
@@ -480,8 +478,9 @@ export function Journal({
           date={selectedDate}
           author={members.find((member) => member.online)?.name ?? "Usuário"}
           onClose={() => setOpen(false)}
-          onSave={async (entry) => {
-            await addEntry(entry);
+          allTasks={tasks}
+          onSave={async (newEntries) => {
+            await addEntries(newEntries);
             setOpen(false);
           }}
         />
@@ -606,8 +605,13 @@ function MonthCalendar({
   );
 }
 
+type FormItem = { taskId: string; progress: number };
+type FormPhoto = { photo: JournalPhoto; taskIds: string[] };
+const MAX_PHOTOS = 20;
+
 function JournalForm({
   tasks,
+  allTasks,
   projectTeams,
   date,
   author,
@@ -615,48 +619,107 @@ function JournalForm({
   onSave,
 }: {
   tasks: Task[];
+  /** Cronograma completo, para mostrar a que item-pai cada atividade pertence. */
+  allTasks: Task[];
   projectTeams: ProjectTeam[];
   date: string;
   author: string;
   onClose: () => void;
-  onSave: (entry: JournalEntry) => Promise<void>;
+  onSave: (entries: JournalEntry[]) => Promise<void>;
 }) {
   const [step, setStep] = useState(1);
   const executableTasks = tasks.filter(
     (task) => !tasks.some((child) => child.parentId === task.id),
   );
-  const activeTasks = executableTasks.filter((task) => task.progress < 100);
-  if (!activeTasks.length) activeTasks.push(...executableTasks);
-  const [taskId, setTaskId] = useState(activeTasks[0].id);
-  const task = tasks.find((item) => item.id === taskId) ?? tasks[0];
+  const openTasks = executableTasks.filter((task) => task.progress < 100);
+  const selectable = openTasks.length ? openTasks : executableTasks;
+  const taskById = (id: string) =>
+    tasks.find((item) => item.id === id) ?? selectable[0];
+  const initialProgress = (task: Task) => Math.min(5, 100 - task.progress);
+  const [items, setItems] = useState<FormItem[]>([
+    { taskId: selectable[0].id, progress: initialProgress(selectable[0]) },
+  ]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [progress, setProgress] = useState(Math.min(5, 100 - task.progress));
   const [crew, setCrew] = useState(0);
   const [selectedTeams, setSelectedTeams] = useState<Record<string, number>>(
     {},
   );
   const [weather, setWeather] = useState("Não informado");
-  const [photos, setPhotos] = useState<JournalPhoto[]>([]);
+  const [photos, setPhotos] = useState<FormPhoto[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [saving, setSaving] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const [dictating, setDictating] = useState(false);
-  const maximum = Math.max(0, 100 - task.progress);
   const effectiveCrew = projectTeams.length
     ? Object.values(selectedTeams).reduce((sum, workers) => sum + workers, 0)
     : crew;
-  async function selectPhotos(files: FileList | null) {
-    if (!files) return;
+  const chosenIds = items.map((item) => item.taskId);
+  const remaining = selectable.filter((task) => !chosenIds.includes(task.id));
+  const pathLabel = (task: Task) =>
+    ancestorsOf(allTasks, task.id)
+      .map((parent) => `${parent.code} ${parent.name}`)
+      .join(" › ");
+
+  function updateItem(index: number, change: Partial<FormItem>) {
+    setItems((current) =>
+      current.map((item, position) =>
+        position === index ? { ...item, ...change } : item,
+      ),
+    );
+  }
+  function changeTask(index: number, taskId: string) {
+    const previous = items[index].taskId;
+    updateItem(index, { taskId, progress: initialProgress(taskById(taskId)) });
+    // As fotos vinculadas à atividade trocada passam para a nova.
+    setPhotos((current) =>
+      current.map((entry) => ({
+        ...entry,
+        taskIds: entry.taskIds.map((id) => (id === previous ? taskId : id)),
+      })),
+    );
+  }
+  function addItem() {
+    const next = remaining[0];
+    if (!next) return;
+    setItems((current) => [
+      ...current,
+      { taskId: next.id, progress: initialProgress(next) },
+    ]);
+  }
+  function removeItem(index: number) {
+    const removed = items[index].taskId;
+    setItems((current) => current.filter((_, position) => position !== index));
+    // Foto que ficaria sem atividade passa a valer para todas as que restaram.
+    setPhotos((current) =>
+      current.map((entry) => {
+        const taskIds = entry.taskIds.filter((id) => id !== removed);
+        return {
+          ...entry,
+          taskIds: taskIds.length
+            ? taskIds
+            : chosenIds.filter((id) => id !== removed),
+        };
+      }),
+    );
+  }
+  async function selectPhotos(files: FileList | null, target: string | null) {
+    if (!files?.length) return;
     setLoadingPhotos(true);
     setPhotoError("");
     try {
       const selected = Array.from(files).slice(
         0,
-        Math.max(0, 8 - photos.length),
+        Math.max(0, MAX_PHOTOS - photos.length),
       );
       const compressed = await Promise.all(selected.map(compressJournalPhoto));
-      setPhotos((current) => [...current, ...compressed]);
+      setPhotos((current) => [
+        ...current,
+        ...compressed.map((photo) => ({
+          photo,
+          taskIds: target ? [target] : [...chosenIds],
+        })),
+      ]);
     } catch (cause) {
       setPhotoError(
         cause instanceof Error
@@ -667,41 +730,61 @@ function JournalForm({
       setLoadingPhotos(false);
     }
   }
-  function changeTask(value: string) {
-    setTaskId(value);
-    const next = tasks.find((item) => item.id === value)!;
-    setProgress(Math.min(5, 100 - next.progress));
+  function togglePhotoLink(photoIndex: number, taskId: string) {
+    setPhotos((current) =>
+      current.map((entry, position) => {
+        if (position !== photoIndex) return entry;
+        const linked = entry.taskIds.includes(taskId);
+        // Toda foto precisa continuar vinculada a pelo menos uma atividade.
+        if (linked && entry.taskIds.length === 1) return entry;
+        return {
+          ...entry,
+          taskIds: linked
+            ? entry.taskIds.filter((id) => id !== taskId)
+            : [...entry.taskIds, taskId],
+        };
+      }),
+    );
   }
+  const photosOf = (taskId: string) =>
+    photos.filter((entry) => entry.taskIds.includes(taskId));
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const after = Math.min(100, task.progress + progress);
     setSaving(true);
     setPhotoError("");
+    const time = new Date().toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const teams = Object.entries(selectedTeams).map(([teamId, workers]) => ({
+      teamId,
+      name: projectTeams.find((team) => team.id === teamId)?.name ?? "Equipe",
+      workers,
+    }));
     try {
-      await onSave({
-        id: crypto.randomUUID(),
-        date,
-        time: new Date().toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
+      await onSave(
+        items.map((item) => {
+          const task = taskById(item.taskId);
+          return {
+            id: crypto.randomUUID(),
+            date,
+            time,
+            taskId: item.taskId,
+            title: title.trim() || task.name,
+            description,
+            progressBefore: task.progress,
+            progressAdded: item.progress,
+            progressAfter: Math.min(100, task.progress + item.progress),
+            author,
+            weather,
+            crew: effectiveCrew,
+            teams,
+            // O mesmo objeto de foto em várias atividades é enviado uma única vez.
+            photos: photosOf(item.taskId).map((entry) => entry.photo),
+          };
         }),
-        taskId,
-        title: title || task.name,
-        description,
-        progressBefore: task.progress,
-        progressAdded: progress,
-        progressAfter: after,
-        author,
-        weather,
-        crew: effectiveCrew,
-        teams: Object.entries(selectedTeams).map(([teamId, workers]) => ({
-          teamId,
-          name:
-            projectTeams.find((team) => team.id === teamId)?.name ?? "Equipe",
-          workers,
-        })),
-        photos,
-      });
+      );
     } catch (cause) {
       setPhotoError(
         cause instanceof Error
@@ -747,18 +830,20 @@ function JournalForm({
   }
   const canAdvance =
     step === 1
-      ? Boolean(taskId)
+      ? items.length > 0
       : step === 2
-        ? progress >= 0
+        ? items.some((item) => item.progress > 0) &&
+          items.every((item) => item.progress >= 0)
         : step === 3
           ? photos.length > 0
           : step === 4
-            ? Boolean(title.trim() && description.trim())
+            ? Boolean(description.trim())
             : true;
+  const totalPhotos = photos.length;
   return (
     <Modal
       title="Novo registro de campo"
-      subtitle="Somente atividades executáveis aparecem aqui; itens-pai com filhos são calculados automaticamente."
+      subtitle="Selecione uma ou mais atividades executáveis; itens-pai com filhos são calculados automaticamente."
       onClose={onClose}
       wide
     >
@@ -767,7 +852,7 @@ function JournalForm({
           className="journal-wizard-steps full"
           aria-label="Etapas do diário"
         >
-          {["Atividade", "Avanço", "Fotos", "Descrição", "Revisar"].map(
+          {["Atividades", "Avanço", "Fotos", "Descrição", "Revisar"].map(
             (label, index) => (
               <button
                 key={label}
@@ -783,65 +868,130 @@ function JournalForm({
             ),
           )}
         </nav>
-        <label
-          className={`full activity-selector wizard-panel ${step === 1 ? "active" : ""}`}
-        >
-          <span>1 · Atividade do cronograma</span>
-          <SearchableSelect
-            value={taskId}
-            onChange={(event) => changeTask(event.target.value)}
-          >
-            {activeTasks.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.code} · {item.name} ({item.progress}%)
-              </option>
-            ))}
-          </SearchableSelect>
-          <small>
-            {task.responsible || "Sem responsável"} · {task.phase}
-          </small>
-        </label>
+
         <section
-          className={`measurement-card full wizard-panel ${step === 2 ? "active" : ""}`}
+          className={`journal-items full wizard-panel ${step === 1 ? "active" : ""}`}
         >
-          <div>
+          <header>
+            <span>1 · Atividades do cronograma (EAP)</span>
+            <p>Inclua todas as atividades executadas neste registro.</p>
+          </header>
+          {items.map((item, index) => {
+            const task = taskById(item.taskId);
+            const path = pathLabel(task);
+            return (
+              <div className="journal-item-row" key={`${item.taskId}-${index}`}>
+                <b className="journal-item-index">{index + 1}</b>
+                <div>
+                  <SearchableSelect
+                    value={item.taskId}
+                    onChange={(event) => changeTask(index, event.target.value)}
+                  >
+                    {selectable
+                      .filter(
+                        (option) =>
+                          option.id === item.taskId ||
+                          !chosenIds.includes(option.id),
+                      )
+                      .map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.code} · {option.name} ({option.progress}%)
+                        </option>
+                      ))}
+                  </SearchableSelect>
+                  <small>
+                    {path ? `${path} · ` : ""}
+                    {task.responsible || "Sem responsável"}
+                  </small>
+                </div>
+                {items.length > 1 && (
+                  <button
+                    type="button"
+                    className="icon-btn tiny danger"
+                    aria-label={`Remover ${task.code}`}
+                    onClick={() => removeItem(index)}
+                  >
+                    <Icon name="close" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            className="secondary-btn journal-add-item"
+            disabled={!remaining.length}
+            onClick={addItem}
+          >
+            <Icon name="plus" />{" "}
+            {remaining.length
+              ? "Adicionar outra atividade"
+              : "Todas as atividades abertas já foram incluídas"}
+          </button>
+        </section>
+
+        <section
+          className={`journal-items full wizard-panel ${step === 2 ? "active" : ""}`}
+        >
+          <header>
             <span>2 · Medição do avanço</span>
-            <p>Informe apenas o percentual executado neste dia.</p>
-          </div>
-          <div className="measurement-equation">
-            <span>
-              <small>ATUAL</small>
-              <strong>{task.progress}%</strong>
-            </span>
-            <b>+</b>
-            <label>
-              <small>HOJE</small>
-              <input
-                aria-label="Percentual executado hoje"
-                type="number"
-                min="0"
-                max={maximum}
-                value={progress}
-                onChange={(event) =>
-                  setProgress(Math.min(maximum, Number(event.target.value)))
-                }
-              />
-            </label>
-            <b>=</b>
-            <span className="measure-result">
-              <small>NOVO TOTAL</small>
-              <strong>{task.progress + progress}%</strong>
-            </span>
-          </div>
-          <input
-            className="measurement-range"
-            type="range"
-            min="0"
-            max={maximum}
-            value={progress}
-            onChange={(event) => setProgress(Number(event.target.value))}
-          />
-          <small>Disponível para medir: {maximum}%</small>
+            <p>Informe, em cada atividade, apenas o percentual executado hoje.</p>
+          </header>
+          {items.map((item, index) => {
+            const task = taskById(item.taskId);
+            const maximum = Math.max(0, 100 - task.progress);
+            return (
+              <div className="journal-measure-row" key={item.taskId}>
+                <div>
+                  <strong>
+                    {task.code} · {task.name}
+                  </strong>
+                  <small>{pathLabel(task) || task.phase}</small>
+                </div>
+                <div className="measurement-equation">
+                  <span>
+                    <small>ATUAL</small>
+                    <strong>{task.progress}%</strong>
+                  </span>
+                  <b>+</b>
+                  <label>
+                    <small>HOJE</small>
+                    <input
+                      aria-label={`Percentual executado hoje em ${task.code}`}
+                      type="number"
+                      min="0"
+                      max={maximum}
+                      value={item.progress}
+                      onChange={(event) =>
+                        updateItem(index, {
+                          progress: Math.max(
+                            0,
+                            Math.min(maximum, Number(event.target.value)),
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                  <b>=</b>
+                  <span className="measure-result">
+                    <small>NOVO TOTAL</small>
+                    <strong>{task.progress + item.progress}%</strong>
+                  </span>
+                </div>
+                <input
+                  className="measurement-range"
+                  type="range"
+                  min="0"
+                  max={maximum}
+                  value={item.progress}
+                  aria-label={`Ajustar avanço de ${task.code}`}
+                  onChange={(event) =>
+                    updateItem(index, { progress: Number(event.target.value) })
+                  }
+                />
+              </div>
+            );
+          })}
         </section>
         {projectTeams.length > 0 && (
           <section
@@ -902,41 +1052,12 @@ function JournalForm({
             </div>
           </section>
         )}
-        <label className={`full wizard-panel ${step === 4 ? "active" : ""}`}>
-          <span>4 · O que foi realizado</span>
-          <input
-            required
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Título objetivo do serviço executado"
-          />
-        </label>
-        <label className={`full wizard-panel ${step === 4 ? "active" : ""}`}>
-          <span className="dictation-label">
-            Descrição técnica{" "}
-            <button
-              type="button"
-              className={dictating ? "voice-button listening" : "voice-button"}
-              onClick={startDictation}
-            >
-              {dictating ? "Ouvindo..." : "Ditar"}
-            </button>
-          </span>
-          <textarea
-            required
-            rows={4}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="Descreva local, quantidades, condições, intercorrências e próximos passos..."
-          />
-        </label>
         {!projectTeams.length && (
           <label className={`wizard-panel ${step === 2 ? "active" : ""}`}>
             <span>Efetivo nesta frente</span>
             <input
               type="number"
               min="0"
-              required
               value={crew}
               onChange={(event) => setCrew(Number(event.target.value))}
             />
@@ -956,91 +1077,183 @@ function JournalForm({
             <option>Chuva intensa</option>
           </SearchableSelect>
         </label>
-        <label
-          className={`photo-drop full wizard-panel ${step === 3 ? "active" : ""}`}
+
+        <section
+          className={`journal-items full wizard-panel ${step === 3 ? "active" : ""}`}
         >
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            required={!photos.length}
-            onChange={(event) => void selectPhotos(event.target.files)}
-          />
-          <span className="photo-drop-icon">
-            <Icon name="camera" />
-          </span>
-          <strong>3 · Fotografar ou selecionar evidências</strong>
-          <small>
-            Até 8 fotos. Antes do envio, cada imagem é redimensionada para até
-            1600 px e comprimida para economizar armazenamento.
-          </small>
-          <em>
+          <header>
+            <span>3 · Evidências fotográficas</span>
+            <p>
+              Uma foto no registro já basta. Cada EAP pode receber várias fotos
+              (câmera ou galeria); se a mesma foto mostra várias atividades,
+              envie uma vez e marque as atividades nela.
+            </p>
+          </header>
+          {items.length > 1 && (
+            <div className="journal-photo-row journal-photo-all">
+              <div>
+                <strong>Foto que vale para todas as atividades</strong>
+                <small>
+                  Use quando a mesma imagem mostra várias EAPs; depois ajuste
+                  os vínculos em cada foto.
+                </small>
+              </div>
+              <PhotoPickButtons
+                disabled={loadingPhotos || totalPhotos >= MAX_PHOTOS}
+                onFiles={(files) => void selectPhotos(files, null)}
+              />
+            </div>
+          )}
+          {items.map((item) => {
+            const task = taskById(item.taskId);
+            const linked = photosOf(item.taskId);
+            return (
+              <div className="journal-photo-row" key={item.taskId}>
+                <div>
+                  <strong>
+                    {task.code} · {task.name}
+                  </strong>
+                  <small>
+                    +{item.progress}% ({task.progress}% →{" "}
+                    {task.progress + item.progress}%) ·{" "}
+                    {linked.length
+                      ? `${linked.length} foto${linked.length > 1 ? "s" : ""} vinculada${linked.length > 1 ? "s" : ""}`
+                      : items.length > 1
+                        ? "sem foto própria (opcional)"
+                        : "nenhuma foto ainda"}
+                  </small>
+                  {linked.length > 0 && (
+                    <span className="journal-photo-strip">
+                      {linked.slice(0, 6).map((entry, index) => (
+                        <img key={`${entry.photo.url.slice(-24)}-${index}`} src={entry.photo.url} alt="" />
+                      ))}
+                      {linked.length > 6 && <b>+{linked.length - 6}</b>}
+                    </span>
+                  )}
+                </div>
+                <PhotoPickButtons
+                  disabled={loadingPhotos || totalPhotos >= MAX_PHOTOS}
+                  onFiles={(files) => void selectPhotos(files, item.taskId)}
+                />
+              </div>
+            );
+          })}
+          <small className="journal-photo-hint">
             {loadingPhotos
               ? "Redimensionando e compactando..."
-              : photos.length
-                ? `${photos.length} foto(s) pronta(s) para envio`
-                : "Adicionar fotos"}
-          </em>
-        </label>
+              : `${totalPhotos} de ${MAX_PHOTOS} fotos · cada EAP pode ter várias fotos. As imagens são redimensionadas para até 1600 px antes do envio.`}
+          </small>
+          {photos.length > 0 && (
+            <div className="journal-photo-links">
+              {photos.map((entry, photoIndex) => (
+                <article key={`${entry.photo.url.slice(-24)}-${photoIndex}`}>
+                  <div className="journal-photo-thumb">
+                    <img src={entry.photo.url} alt={`Prévia ${photoIndex + 1}`} />
+                    <button
+                      type="button"
+                      aria-label={`Remover foto ${photoIndex + 1}`}
+                      onClick={() =>
+                        setPhotos((current) =>
+                          current.filter((_, position) => position !== photoIndex),
+                        )
+                      }
+                    >
+                      <Icon name="close" />
+                    </button>
+                    <span>
+                      Foto {photoIndex + 1} ·{" "}
+                      {Math.max(1, Math.round((entry.photo.sizeBytes ?? 0) / 1024))} KB
+                    </span>
+                  </div>
+                  {items.length > 1 && (
+                    <div className="journal-photo-chips" aria-label="Atividades desta foto">
+                      {items.map((item) => {
+                        const active = entry.taskIds.includes(item.taskId);
+                        return (
+                          <button
+                            type="button"
+                            key={item.taskId}
+                            className={active ? "active" : ""}
+                            aria-pressed={active}
+                            onClick={() => togglePhotoLink(photoIndex, item.taskId)}
+                          >
+                            {taskById(item.taskId).code}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
         {photoError && (
           <div
-            className={`access-message full wizard-panel ${step === 3 || step === 4 ? "active" : ""}`}
+            className={`access-message full wizard-panel ${step >= 3 ? "active" : ""}`}
           >
             <Icon name="alert" />
             {photoError}
           </div>
         )}
-        {photos.length > 0 && (
-          <div
-            className={`upload-grid full wizard-panel ${step === 3 ? "active" : ""}`}
-          >
-            {photos.map((photo, index) => (
-              <div key={`${photo.url.slice(0, 24)}-${index}`}>
-                <img src={photo.url} alt={`Prévia ${index + 1}`} />
-                <button
-                  type="button"
-                  aria-label={`Remover foto ${index + 1}`}
-                  onClick={() =>
-                    setPhotos((current) =>
-                      current.filter((_, itemIndex) => itemIndex !== index),
-                    )
-                  }
-                >
-                  <Icon name="close" />
-                </button>
-                <span>
-                  {Math.max(1, Math.round((photo.sizeBytes ?? 0) / 1024))} KB
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+
+        <label className={`full wizard-panel ${step === 4 ? "active" : ""}`}>
+          <span>4 · O que foi realizado</span>
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder={
+              items.length > 1
+                ? "Título do serviço (opcional — vazio usa o nome de cada atividade)"
+                : "Título objetivo do serviço executado (opcional)"
+            }
+          />
+        </label>
+        <label className={`full wizard-panel ${step === 4 ? "active" : ""}`}>
+          <span className="dictation-label">
+            Descrição técnica{" "}
+            <button
+              type="button"
+              className={dictating ? "voice-button listening" : "voice-button"}
+              onClick={startDictation}
+            >
+              {dictating ? "Ouvindo..." : "Ditar"}
+            </button>
+          </span>
+          <textarea
+            rows={4}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Descreva local, quantidades, condições, intercorrências e próximos passos..."
+          />
+        </label>
+
         <div
           className={`wizard-review full wizard-panel ${step === 5 ? "active" : ""}`}
         >
-          <div>
-            <span>ATIVIDADE</span>
-            <strong>
-              {task.code} · {task.name}
-            </strong>
-            <small>{task.phase}</small>
-          </div>
-          <div>
-            <span>AVANÇO DO DIA</span>
-            <strong>+{progress}%</strong>
-            <small>
-              {task.progress}% → {task.progress + progress}%
-            </small>
-          </div>
+          {items.map((item) => {
+            const task = taskById(item.taskId);
+            const linked = photosOf(item.taskId).length;
+            return (
+              <div key={item.taskId}>
+                <span>{task.code}</span>
+                <strong>{task.name}</strong>
+                <small>
+                  +{item.progress}% · {task.progress}% →{" "}
+                  {task.progress + item.progress}% · {linked} foto
+                  {linked === 1 ? "" : "s"}
+                </small>
+              </div>
+            );
+          })}
           <div>
             <span>EVIDÊNCIAS</span>
-            <strong>{photos.length} fotos</strong>
+            <strong>{totalPhotos} fotos</strong>
             <small>{effectiveCrew} pessoas em campo</small>
           </div>
           <div className="full">
             <span>EXECUÇÃO</span>
-            <strong>{title}</strong>
+            <strong>{title || (items.length > 1 ? "Nome de cada atividade" : taskById(items[0].taskId).name)}</strong>
             <small>{description}</small>
           </div>
         </div>
@@ -1051,9 +1264,11 @@ function JournalForm({
           <span>
             <strong>Ao salvar</strong>
             <small>
-              A atividade passará de {task.progress}% para{" "}
-              {task.progress + progress}% e este registro entrará
-              automaticamente no Status Report de {dateLabel(date)}.
+              {items.length > 1
+                ? `As ${items.length} atividades serão atualizadas juntas`
+                : `A atividade passará de ${taskById(items[0].taskId).progress}% para ${taskById(items[0].taskId).progress + items[0].progress}%`}{" "}
+              e o registro entrará automaticamente no Status Report de{" "}
+              {dateLabel(date)}.
             </small>
           </span>
         </div>
@@ -1093,5 +1308,48 @@ function JournalForm({
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** Câmera (uma foto por vez) e galeria (várias de uma vez). No celular, o atributo
+ * capture abre direto a câmera e não permite escolher várias imagens, por isso são dois botões. */
+function PhotoPickButtons({
+  disabled,
+  onFiles,
+}: {
+  disabled: boolean;
+  onFiles: (files: FileList | null) => void;
+}) {
+  return (
+    <span className="journal-photo-buttons">
+      <label className={`secondary-btn compact${disabled ? " disabled" : ""}`}>
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          disabled={disabled}
+          onChange={(event) => {
+            onFiles(event.target.files);
+            event.target.value = "";
+          }}
+        />
+        <Icon name="camera" /> Câmera
+      </label>
+      <label className={`secondary-btn compact${disabled ? " disabled" : ""}`}>
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          disabled={disabled}
+          onChange={(event) => {
+            onFiles(event.target.files);
+            event.target.value = "";
+          }}
+        />
+        <Icon name="plus" /> Galeria
+      </label>
+    </span>
   );
 }

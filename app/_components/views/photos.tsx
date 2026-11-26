@@ -39,7 +39,8 @@ export function Photos({ project, tasks, entries, editEntry, deleteEntry, naviga
     const matchesEap = eap === "all" || item.task?.code === eap || item.task?.code.startsWith(`${eap}.`);
     const term = search.trim().toLocaleLowerCase("pt-BR");
     return matchesEap && (!term || `${item.entry.title} ${item.entry.description} ${item.task?.name ?? ""}`.toLocaleLowerCase("pt-BR").includes(term));
-  }), [eap, entries, search, tasks]);
+  // Uma foto pode ser evidência de várias atividades do mesmo registro: mostra uma vez só.
+  }).filter((item, index, list) => !item.photo.storagePath || list.findIndex((other) => other.photo.storagePath === item.photo.storagePath) === index), [eap, entries, search, tasks]);
   const selectedPhotos = photos.filter((item) => selected.has(item.key));
   const eaps = [...new Map(tasks.map((task) => [task.code.split(".")[0], tasks.find((item) => item.code === task.code.split(".")[0]) ?? task])).values()];
   function toggle(key: string) {

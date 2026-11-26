@@ -20,6 +20,18 @@ import type {
   Task,
   ViewId,
 } from "../types";
+import {
+  actualProgressAt,
+  ancestorsOf,
+  buildSCurve,
+  curvePoints,
+  entriesContribution,
+  entryContribution,
+  formatPercent,
+  leafTasks,
+  leavesUnder,
+  plannedProgressAt,
+} from "../progress";
 import { Modal, StatusBadge } from "../ui";
 
 type Props = {
@@ -99,7 +111,52 @@ export function Reports({
     reports.find((report) => report.date === selectedDate)?.status ?? "review";
   const selectedReport = reports.find((report) => report.date === selectedDate);
   const openIssues = issues.filter((issue) => issue.status !== "resolved");
-  const reportCurve = buildReportCurve(project, tasks, entries, selectedDate);
+  const cutoffDate = selectedDate ?? new Date().toLocaleDateString("sv-SE");
+  const reportCurve = buildSCurve(project, tasks, entries, cutoffDate);
+  // Avanço do dia em pontos percentuais do projeto (não a soma dos % de cada atividade).
+  const dayPoints = entriesContribution(reportEntries, tasks);
+  const totalAtDate = reportCurve.actualAtCutoff;
+  const plannedAtDate = reportCurve.plannedAtCutoff;
+  const deviation = totalAtDate - plannedAtDate;
+  const leaves = leafTasks(tasks);
+  const doneLeaves = leaves.filter((task) => task.progress >= 100).length;
+  const lateLeaves = leaves.filter((task) => taskExecutionStatus(task) === "late").length;
+  const daysLeft = Math.round((dateValue(project.end) - dateValue(cutoffDate)) / dayMs);
+  const fronts = (scope: Task[]) =>
+    scope.map((task) => {
+      const under = leavesUnder(tasks, task.id);
+      const planned = plannedProgressAt(tasks, cutoffDate, under);
+      const actual = actualProgressAt(tasks, entries, cutoffDate, under);
+      return { task, planned, actual, deviation: actual - planned };
+    });
+  const stageRows = fronts(tasks.filter((task) => !task.parentId));
+  // Frentes do dia: o item imediatamente abaixo da etapa que contém cada atividade lançada.
+  const dayFrontIds = [
+    ...new Set(
+      reportEntries.map((entry) => {
+        const path = ancestorsOf(tasks, entry.taskId);
+        return (path[1] ?? path[0])?.id ?? entry.taskId;
+      }),
+    ),
+  ];
+  const dayFrontRows = fronts(
+    tasks.filter((task) => dayFrontIds.includes(task.id) && task.parentId),
+  ).slice(0, 8);
+  // Mesmo conjunto de fotos = mesma evidência: as atividades aparecem juntas, sem repetir a foto.
+  const activityGroups = reportEntries.reduce<JournalEntry[][]>((groups, entry) => {
+    const key = entry.photos.map((photo) => photo.storagePath ?? photo.url).sort().join("|");
+    const group = key
+      ? groups.find((items) => items[0].photos.map((photo) => photo.storagePath ?? photo.url).sort().join("|") === key)
+      : undefined;
+    if (group) group.push(entry);
+    else groups.push([entry]);
+    return groups;
+  }, []);
+  // Gantt do relatório: mostra os itens-pai e esconde as atividades de último nível,
+  // exceto as que não têm pai.
+  const ganttTasks = tasks.filter(
+    (task) => !task.parentId || tasks.some((child) => child.parentId === task.id),
+  );
   const ganttStart = tasks.reduce(
     (value, task) => (task.plannedStart < value ? task.plannedStart : value),
     project.start,
@@ -192,6 +249,47 @@ export function Reports({
     }
   }
 
+  /**
+   * Gera o PDF num documento à parte (iframe): só o relatório e o Gantt, sem o app em volta.
+   * Assim o tema escuro não vaza para a impressão e o Gantt sai em paisagem.
+   */
+  async function exportPdf() {
+    const paper = document.querySelector(".report-paper");
+    if (!paper) return;
+    const gantt = document.querySelector(".report-gantt-print");
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;";
+    document.body.appendChild(frame);
+    const doc = frame.contentDocument;
+    const view = frame.contentWindow;
+    if (!doc || !view) { frame.remove(); return; }
+    const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')]
+      .map((node) => node.outerHTML)
+      .join("");
+    const title = `Status Report · ${project.name} · ${(selectedDate ?? "").split("-").reverse().join("-")}`
+      .replace(/[<>&"]/g, "");
+    doc.open();
+    doc.write(`<!doctype html><html lang="pt-BR" data-theme="light" style="color-scheme:light"><head><meta charset="utf-8"><title>${title}</title><base href="${window.location.origin}/">${styles}</head><body class="report-print-document">${paper.outerHTML}${gantt?.outerHTML ?? ""}</body></html>`);
+    doc.close();
+    await Promise.all(
+      [...doc.images].map((image) =>
+        image.complete
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              image.onload = () => resolve();
+              image.onerror = () => resolve();
+            }),
+      ),
+    );
+    await doc.fonts?.ready;
+    const cleanup = () => window.setTimeout(() => frame.remove(), 500);
+    view.addEventListener("afterprint", cleanup, { once: true });
+    window.setTimeout(() => frame.isConnected && frame.remove(), 120_000);
+    view.focus();
+    view.print();
+  }
+
   const reportDependencyLayer = (suffix: string) => {
     const markerId = `report-arrow-${suffix}`;
     const xFor = (value: string, endBoundary = false) =>
@@ -208,7 +306,7 @@ export function Reports({
     return (
       <svg
         className="print-dependency-layer"
-        viewBox={`0 0 1000 ${Math.max(27, tasks.length * 27)}`}
+        viewBox={`0 0 1000 ${Math.max(27, ganttTasks.length * 27)}`}
         preserveAspectRatio="none"
         aria-hidden="true"
       >
@@ -224,12 +322,12 @@ export function Reports({
             <path d="M0,0 L7,3.5 L0,7 Z" />
           </marker>
         </defs>
-        {tasks.map((task, targetIndex) => {
-          const sourceIndex = tasks.findIndex(
+        {ganttTasks.map((task, targetIndex) => {
+          const sourceIndex = ganttTasks.findIndex(
             (item) => item.id === task.dependencyId,
           );
           if (sourceIndex < 0) return null;
-          const predecessor = tasks[sourceIndex];
+          const predecessor = ganttTasks[sourceIndex];
           const relation = task.dependencyType ?? "FS";
           const sourceUsesFinish = relation === "FS" || relation === "FF";
           const targetUsesFinish = relation === "FF" || relation === "SF";
@@ -277,7 +375,7 @@ export function Reports({
     <section className={`report-gantt-page ${extraClass}`}>
       <header>
         <div>
-          <span>CRONOGRAMA COMPLETO</span>
+          <span>CRONOGRAMA RESUMIDO</span>
           <h3>Evolução geral da obra</h3>
           <p>
             {project.name} · posição em{" "}
@@ -298,7 +396,7 @@ export function Reports({
           </div>
         </div>
         {reportDependencyLayer(extraClass)}
-        {tasks.map((task) => {
+        {ganttTasks.map((task) => {
           const palette = taskStatusPalette[taskExecutionStatus(task)];
           return (
             <div className="print-gantt-row" key={task.id}>
@@ -346,6 +444,10 @@ export function Reports({
             </span>
           ),
         )}
+        <small>
+          Visão por etapas e frentes: as atividades de último nível estão
+          consolidadas no avanço do item acima.
+        </small>
         <b>
           {ganttStart.split("-").reverse().join("/")} -{" "}
           {ganttEnd.split("-").reverse().join("/")}
@@ -489,6 +591,7 @@ export function Reports({
           >
             <div className="report-preview">
               <div className="report-paper">
+                <div className="report-page-one">
                 <header>
                   <div className="report-logo">
                     <img src="/emdia.svg" alt="" />
@@ -509,31 +612,64 @@ export function Reports({
                   </p>
                   <strong>{longDate(selectedDate)}</strong>
                 </div>
-                <div className="report-kpis">
+                <div className="report-kpis report-kpis-dashboard">
+                  <div className="highlight">
+                    <span>AVANÇO DO PROJETO</span>
+                    <strong>{formatPercent(totalAtDate)}%</strong>
+                    <small>
+                      +{formatPercent(dayPoints)} p.p. neste dia
+                    </small>
+                  </div>
                   <div>
-                    <span>AVANÇO GERAL</span>
-                    <strong>{metrics.overall}%</strong>
+                    <span>PLANEJADO ATÉ A DATA</span>
+                    <strong>{formatPercent(plannedAtDate)}%</strong>
+                    <small className={deviation < 0 ? "negative" : "positive"}>
+                      {deviation >= 0 ? "+" : "−"}
+                      {formatPercent(Math.abs(deviation))} p.p.{" "}
+                      {deviation >= 0 ? "à frente" : "de atraso"}
+                    </small>
                   </div>
                   <div>
                     <span>ATIVIDADES NO DIA</span>
                     <strong>
                       {new Set(reportEntries.map((entry) => entry.taskId)).size}
                     </strong>
+                    <small>{photos.length} evidência{photos.length === 1 ? "" : "s"} fotográfica{photos.length === 1 ? "" : "s"}</small>
                   </div>
                   <div>
-                    <span>AVANÇO MEDIDO</span>
+                    <span>TÉRMINO PREVISTO</span>
+                    <strong>{project.end.split("-").reverse().join("/")}</strong>
+                    <small>
+                      {daysLeft >= 0
+                        ? `${daysLeft} dia${daysLeft === 1 ? "" : "s"} restante${daysLeft === 1 ? "" : "s"}`
+                        : `${Math.abs(daysLeft)} dias após o prazo`}
+                    </small>
+                  </div>
+                  <div>
+                    <span>ATIVIDADES CONCLUÍDAS</span>
                     <strong>
-                      +
-                      {reportEntries.reduce(
-                        (sum, entry) => sum + entry.progressAdded,
-                        0,
-                      )}
-                      %
+                      {doneLeaves}
+                      <em> de {leaves.length}</em>
                     </strong>
+                    <small>{formatPercent((doneLeaves / Math.max(1, leaves.length)) * 100, 0)}% do escopo executável</small>
                   </div>
                   <div>
-                    <span>EVIDÊNCIAS</span>
-                    <strong>{photos.length}</strong>
+                    <span>EM ATRASO</span>
+                    <strong className={lateLeaves ? "negative" : ""}>{lateLeaves}</strong>
+                    <small>atividades com prazo vencido</small>
+                  </div>
+                  <div>
+                    <span>PONTOS DE ATENÇÃO</span>
+                    <strong className={openIssues.length ? "negative" : ""}>{openIssues.length}</strong>
+                    <small>em aberto</small>
+                  </div>
+                  <div>
+                    <span>PRAZO CONSUMIDO</span>
+                    <strong>{formatPercent(reportCurve.cutoffX * 100, 0)}%</strong>
+                    <small>
+                      {project.start.split("-").reverse().join("/")} a{" "}
+                      {project.end.split("-").reverse().join("/")}
+                    </small>
                   </div>
                 </div>
                 {activeTemplate.showSummary && <section className="report-executive-summary">
@@ -541,65 +677,93 @@ export function Reports({
                   <p>
                     {selectedReport?.executiveSummary ?? <>Foram realizados {reportEntries.length} registros em{" "}
                     {new Set(reportEntries.map((entry) => entry.taskId)).size}{" "}
-                    atividades do cronograma. Cada medição abaixo está vinculada
-                    às respectivas evidências de campo e já foi incorporada ao
-                    avanço geral da obra.</>}
+                    atividades do cronograma, que somaram{" "}
+                    {formatPercent(dayPoints)} ponto{dayPoints === 1 ? "" : "s"}{" "}
+                    percentua{dayPoints === 1 ? "l" : "is"} ao projeto,
+                    levando o avanço geral a {formatPercent(totalAtDate)}%
+                    (planejado: {formatPercent(plannedAtDate)}%).</>}
                   </p>
+                </section>}
+                {activeTemplate.showSCurve && <section className="report-curve-section">
+                  <h3>Curva S · planejado × realizado</h3>
+                  <div className="report-curve-chart">
+                    <div className="report-curve-axis"><span>100%</span><span>50%</span><span>0%</span></div>
+                    <svg viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Curva S do projeto"><g><line x1="0" y1="5" x2="600" y2="5"/><line x1="0" y1="75" x2="600" y2="75"/><line x1="0" y1="145" x2="600" y2="145"/></g><line className="cutoff" x1={reportCurve.cutoffX * 600} y1="0" x2={reportCurve.cutoffX * 600} y2="150"/><polyline className="planned" points={curvePoints(reportCurve.planned, 600, 150, 5)}/><polyline className="actual" points={curvePoints(reportCurve.actual, 600, 150, 5)}/></svg>
+                  </div>
+                  <footer><span>{project.start.split("-").reverse().join("/")}</span><b className="planned">Planejado {formatPercent(plannedAtDate)}%</b><b className="actual">Realizado {formatPercent(totalAtDate)}%</b><span>{project.end.split("-").reverse().join("/")}</span></footer>
+                </section>}
+                <section className="report-fronts">
+                  <h3>Etapas da obra</h3>
+                  <FrontTable rows={stageRows} />
+                </section>
+                {dayFrontRows.length > 0 && <section className="report-fronts">
+                  <h3>Frentes trabalhadas no dia</h3>
+                  <FrontTable rows={dayFrontRows} />
                 </section>}
                 {activeTemplate.showAttention && openIssues.length > 0 && <section className="report-attention-section">
                   <h3>Pontos de atenção</h3>
                   <div className="report-update-list">
-                    {openIssues.slice(0, 6).map((issue) => <article key={issue.id}><span>!</span><div><strong>{issue.title}</strong><small>{issue.category} · {issue.priority}</small><p>{issue.description}</p></div></article>)}
+                    {openIssues.slice(0, 3).map((issue) => <article key={issue.id}><span>!</span><div><strong>{issue.title}</strong><small>{issue.category} · {issue.priority}</small><p>{issue.description}</p></div></article>)}
                   </div>
                 </section>}
-                {activeTemplate.showSCurve && <section className="report-curve-section">
-                  <h3>Curva S · planejado × realizado</h3>
-                  <svg viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Curva S do projeto"><g><line x1="0" y1="5" x2="600" y2="5"/><line x1="0" y1="75" x2="600" y2="75"/><line x1="0" y1="145" x2="600" y2="145"/></g><polyline className="planned" points={reportCurve.map((point,index)=>`${index/(reportCurve.length-1)*600},${145-point.planned*1.4}`).join(" ")}/><polyline className="actual" points={reportCurve.map((point,index)=>point.actual === null ? null : `${index/(reportCurve.length-1)*600},${145-point.actual*1.4}`).filter(Boolean).join(" ")}/></svg>
-                  <footer><span>{project.start.split("-").reverse().join("/")}</span><b>Planejado</b><b>Realizado</b><span>{project.end.split("-").reverse().join("/")}</span></footer>
-                </section>}
-                {activeTemplate.showPhotos && <section>
+                </div>
+                {activeTemplate.showPhotos && <section className="report-activities">
                   <h3>Serviços executados e evidências</h3>
                   <div className="report-activity-blocks">
-                    {reportEntries.map((entry) => {
-                      const task = tasks.find(
-                        (item) => item.id === entry.taskId,
-                      );
+                    {activityGroups.map((group) => {
+                      const first = group[0];
+                      const sameText = group.every((entry) => entry.title === first.title && entry.description === first.description);
+                      const groupPoints = entriesContribution(group, tasks);
                       return (
                         <article
                           className="report-activity-block"
-                          key={entry.id}
+                          key={first.id}
                         >
                           <header>
-                            <span>{task?.code}</span>
-                            <div>
-                              <strong>{entry.title}</strong>
+                            {group.map((entry) => {
+                              const task = tasks.find((item) => item.id === entry.taskId);
+                              const path = ancestorsOf(tasks, entry.taskId);
+                              return (
+                                <div className="report-activity-line" key={entry.id}>
+                                  <span>{task?.code}</span>
+                                  <div>
+                                    {path.length > 0 && (
+                                      <small className="report-activity-path">
+                                        {path.map((parent) => `${parent.code} ${parent.name}`).join(" › ")}
+                                      </small>
+                                    )}
+                                    <strong>{task?.name ?? entry.title}</strong>
+                                    {!sameText && <p><b>{entry.title}</b> — {entry.description}</p>}
+                                  </div>
+                                  <b>
+                                    {entry.progressBefore}% → {entry.progressAfter}%{" "}
+                                    <em>(+{entry.progressAdded}%)</em>
+                                    <small>+{formatPercent(entryContribution(entry, tasks), 2)} p.p. da obra</small>
+                                  </b>
+                                </div>
+                              );
+                            })}
+                            <footer>
+                              {sameText && <p><b>{first.title}</b>{first.description ? ` — ${first.description}` : ""}</p>}
                               <small>
-                                {task?.name} · {entry.author} às {entry.time}
+                                {first.author} às {first.time}
+                                {group.length > 1 ? ` · ${group.length} atividades na mesma evidência · +${formatPercent(groupPoints, 2)} p.p. da obra` : ""}
                               </small>
-                              <p>{entry.description}</p>
-                            </div>
-                            <b>
-                              {entry.progressBefore}% → {entry.progressAfter}%{" "}
-                              <em>(+{entry.progressAdded}%)</em>
-                            </b>
+                            </footer>
                           </header>
-                          {entry.photos.length > 0 && (
+                          {first.photos.length > 0 && (
                             <div className={`preview-photos activity-photos photos-${activeTemplate.photoSize}`}>
-                              {entry.photos.map((photo, index) => (
+                              {first.photos.map((photo, index) => (
                                 <article
-                                  key={photo.id ?? `${entry.id}-${index}`}
+                                  key={photo.id ?? `${first.id}-${index}`}
                                 >
                                   <img
                                     src={photo.url}
-                                    alt={`${entry.title} · evidência ${index + 1}`}
+                                    alt={`${first.title} · evidência ${index + 1}`}
                                   />
                                   <div>
                                     <strong>Foto {index + 1}</strong>
-                                    <p>{entry.title}</p>
-                                    <span>
-                                      Evidência vinculada · +
-                                      {entry.progressAdded}% medido
-                                    </span>
+                                    <p>{group.map((entry) => tasks.find((item) => item.id === entry.taskId)?.code).filter(Boolean).join(" · ")}</p>
                                   </div>
                                 </article>
                               ))}
@@ -619,7 +783,7 @@ export function Reports({
               <div className="preview-actions">
                 <button
                   className="secondary-btn"
-                  onClick={() => window.print()}
+                  onClick={() => void exportPdf()}
                 >
                   <Icon name="download" /> Exportar PDF
                 </button>
@@ -652,25 +816,36 @@ export function Reports({
   );
 }
 
-function buildReportCurve(project: Project, tasks: Task[], entries: JournalEntry[], selectedDate: string | null) {
-  const day = 86_400_000;
-  const start = dateValue(project.start);
-  const end = dateValue(project.end);
-  const cut = selectedDate ? dateValue(selectedDate) : Date.now();
-  const leaves = tasks.filter((task) => !tasks.some((child) => child.parentId === task.id));
-  const totalWeight = leaves.reduce((sum, task) => sum + task.weight, 0) || 1;
-  return Array.from({ length: 14 }, (_, index) => {
-    const sample = start + ((end - start) * index) / 13;
-    const planned = leaves.reduce((sum, task) => {
-      const taskStart = dateValue(task.plannedStart);
-      const taskEnd = dateValue(task.plannedEnd);
-      const fraction = sample < taskStart ? 0 : sample >= taskEnd ? 1 : (sample - taskStart) / Math.max(day, taskEnd - taskStart);
-      return sum + task.weight * fraction * 100;
-    }, 0) / totalWeight;
-    const actual = sample > cut ? null : leaves.reduce((sum, task) => {
-      const measured = entries.filter((entry) => entry.taskId === task.id && dateValue(entry.date) <= sample).reduce((value, entry) => value + entry.progressAdded, 0);
-      return sum + task.weight * Math.min(100, measured);
-    }, 0) / totalWeight;
-    return { planned: Math.round(planned), actual: actual === null ? null : Math.round(actual) };
-  });
+type FrontRow = { task: Task; planned: number; actual: number; deviation: number };
+
+/** Tabela de etapas/frentes: planejado × realizado na data do relatório. */
+function FrontTable({ rows }: { rows: FrontRow[] }) {
+  return (
+    <div className="report-front-table">
+      <div className="report-front-row head">
+        <span>EAP · ITEM</span>
+        <span>PLANEJADO</span>
+        <span>REALIZADO</span>
+        <span>DESVIO</span>
+      </div>
+      {rows.map(({ task, planned, actual, deviation }) => (
+        <div className="report-front-row" key={task.id}>
+          <span>
+            <b>{task.code}</b> {task.name}
+          </span>
+          <span>{formatPercent(planned)}%</span>
+          <span>
+            <i>
+              <em style={{ width: `${Math.min(100, actual)}%` }} />
+            </i>
+            {formatPercent(actual)}%
+          </span>
+          <span className={deviation < -0.05 ? "negative" : "positive"}>
+            {deviation >= 0 ? "+" : "−"}
+            {formatPercent(Math.abs(deviation))} p.p.
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }

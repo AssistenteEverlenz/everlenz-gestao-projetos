@@ -27,6 +27,7 @@ Execute os arquivos no SQL Editor de um projeto Supabase novo, nesta ordem:
 23. 023_project_period_and_deadline.sql
 24. 024_bulk_schedule_writes.sql
 25. 025_per_user_project_access.sql
+26. 026_multi_activity_journal.sql
 
 O fluxo crítico usa a função record_daily_progress. Ela bloqueia a atividade,
 calcula o percentual final e grava diário, medição e metadados das fotos na mesma

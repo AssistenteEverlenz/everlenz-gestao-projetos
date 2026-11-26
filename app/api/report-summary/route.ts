@@ -9,16 +9,18 @@ type Input = {
   project?: string;
   date?: string;
   overall?: number;
-  entries?: Array<{ eap: string; activity: string; title: string; description: string; progress: number }>;
+  entries?: Array<{ eap: string; activity: string; title: string; description: string; progress: number; projectPoints?: number }>;
   alerts?: Array<{ title: string; description: string; priority: string }>;
 };
 
 function localSummary(body: Input) {
   const entries = body.entries ?? [];
-  const progress = entries.reduce((sum, entry) => sum + entry.progress, 0);
+  // Contribuição ao projeto inteiro (pontos percentuais), não a soma dos % de cada atividade.
+  const progress = entries.reduce((sum, entry) => sum + (entry.projectPoints ?? 0), 0);
+  const points = progress.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const activities = [...new Set(entries.map((entry) => `${entry.eap} · ${entry.activity}`))];
   const attention = (body.alerts ?? []).filter((item) => item.priority === "high" || item.priority === "critical");
-  const execution = activities.length ? `No período, houve avanço em ${activities.length} atividade${activities.length > 1 ? "s" : ""}, com ${progress} ponto${progress !== 1 ? "s" : ""} percentual${progress !== 1 ? "is" : ""} medido${progress !== 1 ? "s" : ""}.` : "Não houve medição física registrada no período.";
+  const execution = activities.length ? `No período, houve avanço em ${activities.length} atividade${activities.length > 1 ? "s" : ""}, que somaram ${points} ponto${progress !== 1 ? "s" : ""} percentual${progress !== 1 ? "is" : ""} ao avanço da obra.` : "Não houve medição física registrada no período.";
   const detail = entries.slice(0, 3).map((entry) => entry.title).join("; ");
   const risk = attention.length ? ` Permanecem ${attention.length} ponto${attention.length > 1 ? "s" : ""} crítico${attention.length > 1 ? "s" : ""} sob acompanhamento.` : " Não foram registrados pontos críticos em aberto.";
   return `${body.project ?? "A obra"} apresenta avanço físico geral de ${body.overall ?? 0}%. ${execution}${detail ? ` Principais frentes: ${detail}.` : ""}${risk}`;

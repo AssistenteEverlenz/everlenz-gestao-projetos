@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Icon } from "../icons";
 import type { JournalEntry, Member, Project, Task, ViewId } from "../types";
+import { buildSCurve, curvePoints, formatPercent } from "../progress";
 import { ProgressRing, StatusBadge } from "../ui";
 
 type Props = { project: Project; tasks: Task[]; entries: JournalEntry[]; members: Member[]; navigate: (view: ViewId) => void; metrics: { overall: number; active: number } };
@@ -18,9 +19,8 @@ export function Overview({ project, tasks, entries, navigate, metrics }: Props) 
   const elapsedDays = Math.max(0, Math.min(totalDays, Math.round((Date.now() - startDate.getTime()) / 86_400_000) + 1));
   const formatDate = (value: string) => new Date(value + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).replace(" de ", " ");
   const photoCount = entries.reduce((sum, entry) => sum + entry.photos.length, 0);
-  const curve = buildSCurve(project, tasks, entries);
-  const visibleActual = curve.filter((point) => point.actual !== null);
-  const plannedToday = visibleActual.at(-1)?.planned ?? 0;
+  const curve = buildSCurve(project, tasks, entries, new Date().toLocaleDateString("sv-SE"));
+  const plannedToday = Math.round(curve.plannedAtCutoff);
 
   function metricCard(id: string, label: string, value: string, hint: string, icon: "trend" | "calendar" | "clock" | "alert", tone: string, details: string) {
     const open = expanded === id;
@@ -79,8 +79,8 @@ export function Overview({ project, tasks, entries, navigate, metrics }: Props) 
     </section>
 
     <section className="panel glass s-curve-panel">
-      <header className="panel-header"><div><span className="overline">CURVA S</span><h3>Planejado × realizado</h3></div><div className="curve-legend"><span><i className="planned"/>Planejado {plannedToday}%</span><span><i className="actual"/>Realizado {metrics.overall}%</span></div></header>
-      <div className="s-curve-chart"><span className="curve-axis top">100%</span><span className="curve-axis middle">50%</span><span className="curve-axis bottom">0%</span><svg viewBox="0 0 1000 260" preserveAspectRatio="none" role="img" aria-label="Curva S planejada e realizada"><g className="curve-grid"><line x1="0" y1="10" x2="1000" y2="10"/><line x1="0" y1="130" x2="1000" y2="130"/><line x1="0" y1="250" x2="1000" y2="250"/></g><polyline className="curve-planned" points={curve.map((point,index)=>`${index/(curve.length-1)*1000},${250-point.planned*2.4}`).join(" ")}/><polyline className="curve-actual" points={curve.map((point,index)=>point.actual === null ? null : `${index/(curve.length-1)*1000},${250-point.actual*2.4}`).filter(Boolean).join(" ")}/></svg><div className="curve-dates"><span>{formatDate(project.start)}</span><span>Hoje</span><span>{formatDate(project.end)}</span></div></div>
+      <header className="panel-header"><div><span className="overline">CURVA S</span><h3>Planejado × realizado</h3></div><div className="curve-legend"><span><i className="planned"/>Planejado {plannedToday}%</span><span><i className="actual"/>Realizado {formatPercent(curve.actualAtCutoff)}%</span></div></header>
+      <div className="s-curve-chart"><span className="curve-axis top">100%</span><span className="curve-axis middle">50%</span><span className="curve-axis bottom">0%</span><svg viewBox="0 0 1000 260" preserveAspectRatio="none" role="img" aria-label="Curva S planejada e realizada"><g className="curve-grid"><line x1="0" y1="10" x2="1000" y2="10"/><line x1="0" y1="130" x2="1000" y2="130"/><line x1="0" y1="250" x2="1000" y2="250"/></g><line className="curve-today" x1={curve.cutoffX*1000} y1="0" x2={curve.cutoffX*1000} y2="260"/><polyline className="curve-planned" points={curvePoints(curve.planned,1000,260,10)}/><polyline className="curve-actual" points={curvePoints(curve.actual,1000,260,10)}/></svg><div className="curve-dates"><span>{formatDate(project.start)}</span><span>Hoje</span><span>{formatDate(project.end)}</span></div></div>
     </section>
 
     <div className="overview-columns">
@@ -118,25 +118,3 @@ function brandInitials(value: string) {
     .toUpperCase();
 }
 
-function buildSCurve(project: Project, tasks: Task[], entries: JournalEntry[]) {
-  const day = 86_400_000;
-  const start = new Date(`${project.start}T12:00:00`).getTime();
-  const end = new Date(`${project.end}T12:00:00`).getTime();
-  const today = Math.min(end, Math.max(start, Date.now()));
-  const leaves = tasks.filter((task) => !tasks.some((child) => child.parentId === task.id));
-  const totalWeight = leaves.reduce((sum, task) => sum + task.weight, 0) || 1;
-  return Array.from({ length: 20 }, (_, index) => {
-    const sample = start + ((end - start) * index) / 19;
-    const planned = leaves.reduce((sum, task) => {
-      const taskStart = new Date(`${task.plannedStart}T12:00:00`).getTime();
-      const taskEnd = new Date(`${task.plannedEnd}T12:00:00`).getTime();
-      const fraction = sample < taskStart ? 0 : sample >= taskEnd ? 1 : (sample - taskStart) / Math.max(day, taskEnd - taskStart);
-      return sum + task.weight * fraction * 100;
-    }, 0) / totalWeight;
-    const actual = sample > today ? null : leaves.reduce((sum, task) => {
-      const progress = entries.filter((entry) => entry.taskId === task.id && new Date(`${entry.date}T12:00:00`).getTime() <= sample).reduce((value, entry) => value + entry.progressAdded, 0);
-      return sum + task.weight * Math.min(100, progress);
-    }, 0) / totalWeight;
-    return { planned: Math.round(planned), actual: actual === null ? null : Math.round(actual) };
-  });
-}

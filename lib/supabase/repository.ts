@@ -1427,53 +1427,54 @@ async function photoToFile(photo: JournalPhoto, index: number) {
   });
 }
 
-export async function recordRemoteEntry(
+/**
+ * Grava um registro de campo com várias atividades numa única transação
+ * (migration 026). Fotos compartilhadas — o mesmo objeto JournalPhoto em mais de
+ * uma atividade — sobem uma única vez e são vinculadas a cada atividade.
+ */
+export async function recordRemoteEntries(
   workspace: ProjectWorkspace,
-  entry: JournalEntry,
+  entries: JournalEntry[],
 ) {
   if (!workspace.organizationId)
     throw new Error("Organização não identificada.");
-  const files = await Promise.all(entry.photos.map(photoToFile));
-  const uploadId = crypto.randomUUID();
+  if (!entries.length) return;
+  const unique = [...new Set(entries.flatMap((entry) => entry.photos))];
+  const files = await Promise.all(unique.map(photoToFile));
   const uploaded = await uploadWorksitePhotos(
     workspace.organizationId,
     workspace.project.id,
-    entry.date,
-    uploadId,
+    entries[0].date,
+    crypto.randomUUID(),
     files,
   );
+  const byPhoto = new Map(unique.map((photo, index) => [photo, uploaded[index]]));
+  const first = entries[0];
   const supabase = getSupabaseBrowserClient();
-  const { data: updateId, error } = await supabase.rpc(
-    "record_daily_progress",
-    {
-      p_project_id: workspace.project.id,
-      p_task_id: entry.taskId,
-      p_log_date: entry.date,
-      p_title: entry.title,
-      p_description: entry.description,
-      p_progress_delta: entry.progressAdded,
-      p_crew_count: entry.crew,
-      p_weather: entry.weather,
-      p_photos: uploaded,
-    },
-  );
+  const { error } = await supabase.rpc("record_daily_progress_batch", {
+    p_project_id: workspace.project.id,
+    p_log_date: first.date,
+    p_title: first.title,
+    p_description: first.description,
+    p_crew_count: first.crew,
+    p_weather: first.weather,
+    p_items: entries.map((entry) => ({
+      task_id: entry.taskId,
+      progress_delta: entry.progressAdded,
+      title: entry.title,
+      photos: entry.photos.map((photo) => byPhoto.get(photo)),
+    })),
+    p_teams: (first.teams ?? []).map((team) => ({
+      team_id: team.teamId,
+      worker_count: team.workers,
+    })),
+  });
   if (error) {
-    await supabase.storage
-      .from("worksite-photos")
-      .remove(uploaded.map((item) => item.storage_path));
+    if (uploaded.length)
+      await supabase.storage
+        .from("worksite-photos")
+        .remove(uploaded.map((item) => item.storage_path));
     throw error;
-  }
-  if (entry.teams?.length && updateId) {
-    const { error: teamError } = await supabase
-      .from("task_update_teams")
-      .insert(
-        entry.teams.map((team) => ({
-          update_id: updateId,
-          team_id: team.teamId,
-          worker_count: team.workers,
-        })),
-      );
-    if (teamError) throw teamError;
   }
 }
 

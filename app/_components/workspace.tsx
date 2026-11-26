@@ -31,6 +31,7 @@ import { Modal } from "./ui";
 import { FirstAccess } from "./first-access";
 import { OnboardingTour } from "./onboarding-tour";
 import { normalizeTaskHierarchy } from "./task-structure";
+import { entryContribution } from "./progress";
 import {
   normalizeWorkingDuration,
   rescheduleTasks,
@@ -68,7 +69,7 @@ import {
   getProfile,
   inviteRemoteMember,
   loadAvailableWorkspaces,
-  recordRemoteEntry,
+  recordRemoteEntries,
   resetRemoteMemberPassword,
   reorderRemoteTasks,
   updateRemoteEntry,
@@ -806,22 +807,28 @@ export function Workspace() {
     );
   }
 
-  async function addEntry(newEntry: JournalEntry) {
-    if (!workspace) return;
-    const entry = { ...newEntry, authorId: currentUserId };
-    const applyEntry = () =>
+  // Um registro de campo pode medir várias atividades; todas são gravadas juntas.
+  async function addEntries(newEntries: JournalEntry[]) {
+    if (!workspace || !newEntries.length) return;
+    const entries = newEntries.map((entry) => ({ ...entry, authorId: currentUserId }));
+    if (remoteMode) {
+      await recordRemoteEntries(workspace, entries);
+      setReloadToken((value) => value + 1);
+    } else
       updateCurrent((current) => ({
         ...current,
-        entries: [entry, ...current.entries],
-        tasks: withRecalculatedProgress(
+        entries: [...entries, ...current.entries],
+        tasks: entries.reduce(
+          (tasks, entry) =>
+            withRecalculatedProgress(tasks, entry.taskId, entry.progressAfter),
           current.tasks,
-          entry.taskId,
-          entry.progressAfter,
         ),
       }));
-    if (remoteMode) await recordRemoteEntry(workspace, entry);
-    applyEntry();
-    setToast("Registro salvo, evidências vinculadas e cronograma atualizado.");
+    setToast(
+      entries.length > 1
+        ? `Registro salvo em ${entries.length} atividades e cronograma atualizado.`
+        : "Registro salvo, evidências vinculadas e cronograma atualizado.",
+    );
   }
 
   async function editEntry(entry: JournalEntry) {
@@ -1415,6 +1422,9 @@ export function Workspace() {
           title: entry.title,
           description: entry.description,
           progress: entry.progressAdded,
+          projectPoints: Number(
+            entryContribution(entry, workspace.tasks).toFixed(2),
+          ),
         };
       }),
       alerts: (workspace.issues ?? [])
@@ -1950,7 +1960,7 @@ export function Workspace() {
               {...common}
               currentUserId={currentUserId}
               canModerate={canManageProject}
-              addEntry={addEntry}
+              addEntries={addEntries}
               editEntry={editEntry}
               deleteEntry={deleteEntry}
             />
