@@ -620,6 +620,7 @@ export function Reports({
                   </p>
                   <strong>{longDate(selectedDate)}</strong>
                 </div>
+                <section className="report-overview">
                 <ReportCaption no={nextSection()} title="Visão geral" subtitle={`Como a obra estava em ${selectedDate.split("-").reverse().join("/")}`} />
                 <div className="report-hero">
                   <div className="report-hero-ring">
@@ -708,6 +709,7 @@ export function Reports({
                     </p>
                   </div>
                 </div>
+                </section>
                 {activeTemplate.showSummary && <section className="report-executive-summary">
                   <div className="report-section-heading"><ReportCaption no={nextSection()} title="Resumo executivo" />{canManage && <button className="secondary-btn compact no-print" disabled={generatingSummary || !selectedReport} onClick={() => void handleGenerateSummary()}><Icon name="spark"/>{generatingSummary ? " Gerando..." : " Gerar resumo inteligente"}</button>}</div>
                   <p>
