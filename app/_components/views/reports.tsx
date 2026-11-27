@@ -291,6 +291,7 @@ export function Reports({
       if (tab) {
         tab.document.open();
         tab.document.write(html);
+        tab.document.documentElement.className = document.documentElement.className;
         tab.document.close();
         await ready(tab.document);
         tab.focus();
@@ -307,6 +308,7 @@ export function Reports({
     if (!doc || !view) { frame.remove(); return; }
     doc.open();
     doc.write(html);
+    doc.documentElement.className = document.documentElement.className;
     doc.close();
     await ready(doc);
     const cleanup = () => window.setTimeout(() => frame.remove(), 500);
@@ -622,7 +624,7 @@ export function Reports({
                   <div className="report-logo">
                     <img src="/emdia.svg" alt="" />
                     <strong>
-                      em dia <span>BY EVERLENZ</span>
+                      em dia <span className="by-everlenz">by <img src="/brand/lettering-everlenz-escuro.svg" alt="Everlenz" /></span>
                     </strong>
                   </div>
                   <small>

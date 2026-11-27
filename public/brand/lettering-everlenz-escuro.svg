@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 356 44" width="356" height="44">
+  <title>EVERLENZ — lettering grafite (fundo claro)</title>
+  <g fill="#1F2328">
+    <rect x="0" y="0" width="30" height="5.5"/><rect x="4" y="17.25" width="22" height="5.5"/><rect x="0" y="34.5" width="30" height="5.5"/>
+    <rect x="92" y="0" width="30" height="5.5"/><rect x="96" y="17.25" width="22" height="5.5"/><rect x="92" y="34.5" width="30" height="5.5"/>
+    <rect x="230" y="0" width="30" height="5.5"/><rect x="234" y="17.25" width="22" height="5.5"/><rect x="230" y="34.5" width="30" height="5.5"/>
+  </g>
+  <g fill="none" stroke="#1F2328" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="4">
+    <path d="M48,0 L61,36.5 L74,0"/>
+    <path d="M140.75,40 V2.75 H156 A9.5 9.5 0 0 1 156,21.75 H140.75 M153,21.75 L166,40"/>
+    <path d="M186.75,0 V37.25 H214"/>
+    <path d="M278.75,40 V3 L301.25,37 V0"/>
+    <path d="M322,2.75 H350 L324,37.25 H352"/>
+  </g>
+</svg>

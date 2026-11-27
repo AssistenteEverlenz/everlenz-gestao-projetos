@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-340 -340 680 680" width="680" height="680">
+  <title>Everlenz — símbolo neon sobre fundo preto</title>
+  <defs>
+    <path id="ring" fill="none" d="M-116.8,-143.2 A117 117 0 1 1 116.8,-143.2 A25 25 0 0 0 143.2,-116.8 A117 117 0 1 1 143.2,116.8 A25 25 0 0 0 116.8,143.2 A117 117 0 1 1 -116.8,143.2 A25 25 0 0 0 -143.2,116.8 A117 117 0 1 1 -143.2,-116.8 A25 25 0 0 0 -116.8,-143.2 Z"/>
+    <path id="knot" fill="none" transform="rotate(45)" d="M37,106 L37,-106 A69 69 0 1 1 106,-37 L-106,-37 A69 69 0 1 1 -37,-106 L-37,106 A69 69 0 1 1 -106,37 L106,37 A69 69 0 1 1 37,106 Z"/>
+    <path id="overGap" fill="none" transform="rotate(45)" d="M37,-70 V-4 M-70,-37 H-4 M-37,4 V70 M4,37 H70"/>
+    <path id="over" fill="none" transform="rotate(45)" d="M37,-74 V0 M-74,-37 H0 M-37,0 V74 M0,37 H74"/>
+    <mask id="cortes" maskUnits="userSpaceOnUse" x="-400" y="-400" width="800" height="800">
+      <rect x="-400" y="-400" width="800" height="800" fill="#fff"/>
+      <use href="#overGap" stroke="#000" stroke-width="46"/>
+    </mask>
+    <linearGradient id="preto" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#181C20"/><stop offset="1" stop-color="#0B0D10"/></linearGradient>
+    <radialGradient id="spot" cx="0" cy="0" r="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A4F8A" stop-opacity=".5"/><stop offset=".6" stop-color="#123A66" stop-opacity=".12"/><stop offset="1" stop-color="#0B0D10" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="halo" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="suave" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="0.9"/></filter>
+  </defs>
+  <rect x="-340" y="-340" width="680" height="680" fill="url(#preto)"/>
+  <rect x="-340" y="-340" width="680" height="680" fill="url(#spot)"/>
+  <g filter="url(#halo)" opacity=".85"><use href="#ring" stroke="#1F7BFF" stroke-width="40"/><use href="#knot" stroke="#1F7BFF" stroke-width="22" mask="url(#cortes)"/></g>
+  <use href="#ring" stroke="#3D9BFF" stroke-width="30"/><use href="#knot" stroke="#3D9BFF" stroke-width="28" mask="url(#cortes)"/><use href="#over" stroke="#3D9BFF" stroke-width="28"/>
+  <use href="#ring" stroke="#6FB4FF" stroke-width="26.5"/><use href="#knot" stroke="#6FB4FF" stroke-width="24.5" mask="url(#cortes)"/><use href="#over" stroke="#6FB4FF" stroke-width="24.5"/>
+  <use href="#ring" stroke="#A8D2FF" stroke-width="23"/><use href="#knot" stroke="#A8D2FF" stroke-width="21" mask="url(#cortes)"/><use href="#over" stroke="#A8D2FF" stroke-width="21"/>
+  <g filter="url(#suave)"><use href="#ring" stroke="#EEF6FF" stroke-width="19"/><use href="#knot" stroke="#EEF6FF" stroke-width="17" mask="url(#cortes)"/><use href="#over" stroke="#EEF6FF" stroke-width="17"/></g>
+</svg>

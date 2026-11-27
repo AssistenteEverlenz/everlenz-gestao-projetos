@@ -11,7 +11,7 @@ import {
   OrganizationSetup,
 } from "./auth";
 import { Icon, type IconName } from "./icons";
-import { BrandSymbols } from "./brand";
+import { BrandSymbols, ByEverlenz } from "./brand";
 import type {
   DeadlineDayType,
   InventoryItem,
@@ -1707,7 +1707,7 @@ export function Workspace() {
           />
           <span>
             <strong>em dia</strong>
-            <small>BY EVERLENZ</small>
+            <small><ByEverlenz /></small>
           </span>
         </button>
 
@@ -1845,7 +1845,7 @@ export function Workspace() {
               }
             />
             <strong>
-              em dia <span>BY EVERLENZ</span>
+              em dia <ByEverlenz />
             </strong>
           </div>
           <div className="header-copy">

@@ -132,7 +132,7 @@ export function Settings({
           description="Aparece no acesso, carregamento e identidade principal da plataforma."
           currentUrl={project?.organizationLogoUrl}
           currentBackground={project?.organizationLogoBackground}
-          fallbackUrl="/everlenz-mark.png"
+          fallbackUrl="/brand/simbolo-everlenz-azul.svg"
           disabled={!canManage}
           onSave={saveBrandLogo}
         />

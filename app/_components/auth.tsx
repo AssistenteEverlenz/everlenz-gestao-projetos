@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { createOrganization } from "@/lib/supabase/repository";
-import { BrandSymbols } from "./brand";
+import { BrandSymbols, ByEverlenz } from "./brand";
 import { Icon } from "./icons";
 
 export function LoadingScreen({
@@ -66,7 +66,7 @@ export function AuthScreen() {
           <BrandSymbols />
           <div>
             <strong>em dia</strong>
-            <span>BY EVERLENZ</span>
+            <ByEverlenz />
           </div>
         </header>
         <span className="overline">
@@ -190,7 +190,7 @@ export function OrganizationSetup({ onReady }: { onReady: () => void }) {
           <BrandSymbols />
           <div>
             <strong>em dia</strong>
-            <span>BY EVERLENZ</span>
+            <ByEverlenz />
           </div>
         </header>
         <span className="overline">CONFIGURAÇÃO INICIAL</span>
