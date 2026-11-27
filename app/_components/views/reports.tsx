@@ -265,6 +265,39 @@ export function Reports({
     const paper = document.querySelector(".report-paper");
     if (!paper) return;
     const gantt = document.querySelector(".report-gantt-print");
+    const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')]
+      .map((node) => node.outerHTML)
+      .join("");
+    const title = `Status Report · ${project.name} · ${(selectedDate ?? "").split("-").reverse().join("-")}`
+      .replace(/[<>&"]/g, "");
+    const html = `<!doctype html><html lang="pt-BR" data-theme="light" style="color-scheme:light"><head><meta charset="utf-8"><meta name="viewport" content="width=800"><title>${title}</title><base href="${window.location.origin}/">${styles}</head><body class="report-print-document">${paper.outerHTML}${gantt?.outerHTML ?? ""}</body></html>`;
+    const ready = async (target: Document) => {
+      await Promise.all(
+        [...target.images].map((image) =>
+          image.complete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                image.onload = () => resolve();
+                image.onerror = () => resolve();
+              }),
+        ),
+      );
+      await target.fonts?.ready;
+    };
+    // No celular o navegador ignora a impressão de iframe e imprime a tela do app (cortando as fotos).
+    // Lá o relatório abre numa aba própria, só com o documento, e a impressão sai dessa aba.
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
+      const tab = window.open("", "_blank");
+      if (tab) {
+        tab.document.open();
+        tab.document.write(html);
+        tab.document.close();
+        await ready(tab.document);
+        tab.focus();
+        tab.print();
+        return;
+      }
+    }
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;";
@@ -272,25 +305,10 @@ export function Reports({
     const doc = frame.contentDocument;
     const view = frame.contentWindow;
     if (!doc || !view) { frame.remove(); return; }
-    const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')]
-      .map((node) => node.outerHTML)
-      .join("");
-    const title = `Status Report · ${project.name} · ${(selectedDate ?? "").split("-").reverse().join("-")}`
-      .replace(/[<>&"]/g, "");
     doc.open();
-    doc.write(`<!doctype html><html lang="pt-BR" data-theme="light" style="color-scheme:light"><head><meta charset="utf-8"><title>${title}</title><base href="${window.location.origin}/">${styles}</head><body class="report-print-document">${paper.outerHTML}${gantt?.outerHTML ?? ""}</body></html>`);
+    doc.write(html);
     doc.close();
-    await Promise.all(
-      [...doc.images].map((image) =>
-        image.complete
-          ? Promise.resolve()
-          : new Promise<void>((resolve) => {
-              image.onload = () => resolve();
-              image.onerror = () => resolve();
-            }),
-      ),
-    );
-    await doc.fonts?.ready;
+    await ready(doc);
     const cleanup = () => window.setTimeout(() => frame.remove(), 500);
     view.addEventListener("afterprint", cleanup, { once: true });
     window.setTimeout(() => frame.isConnected && frame.remove(), 120_000);
